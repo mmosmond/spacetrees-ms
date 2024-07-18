@@ -1,0 +1,1735 @@
+# ------------ python modules ---------
+
+# pip install ragtag #for scaffolding hifi assemblies
+# pip install biopython #convert hap to est
+
+# ------------  paths --------------------
+
+datadir = 'data/' #where to put data
+progdir = 'programs/' #where to put programs
+home = '/home/m/mmosmond/mmosmond/'
+pybin = home + '.virtualenvs/sparg-revisions/bin/' #executables loaded by pip
+scratch = '/scratch/m/mmosmond/mmosmond/'
+
+# ------------- variables ------------
+
+CHRS = range(1,6) #chromosome numbers
+chr_lens = [30427671, 19698289, 23459830, 18585056, 26975502] #chromosome lengths (TAIR10)
+Nes = ['10000','20000','100000'] #prior Ne for relate
+Nes = ['100000'] 
+ms = ['7e-9'] #prior m for relate
+numiters = [10] #number of MCMC iterations when estimating pop size
+thresholds = [0.5] #, 0.9] #fraction of trees to drop when estimating pop size
+TREESKIP = 100 #use every TREESKIPth tree
+nsampless = [1000] #number of times to sample branch lengths at chosen trees
+tCutoffs = [None, int(1e6), int(1e5), int(1e4)] #when to chop off the trees for dispersal rate estimates
+tCutoffs = [int(1e4)]
+
+##########################################################################
+# RULES
+#########################################################################
+
+# trying to follow the methods of https://www.nature.com/articles/s41586-023-06062-z
+
+# ------------------ download fastq sequences ----------------------------
+
+# sequences from:
+# https://www.ebi.ac.uk/ena/browser/view/PRJEB55632
+# https://www.ebi.ac.uk/ena/browser/view/PRJEB55353
+
+paths = [
+'ERR111/ERR11193113/6137.q20.fastq.gz',
+'ERR111/ERR11193262/9762.q20.fastq.gz',
+'ERR111/ERR11194010/9744.q20.fastq.gz',
+'ERR111/ERR11193985/6923.q20.fastq.gz',
+'ERR111/ERR11193241/9879.q20.fastq.gz',
+'ERR111/ERR11194103/9806.q20.fastq.gz',
+'ERR111/ERR11196070/9847.q20.fastq.gz',
+'ERR111/ERR11196076/9830.q20.fastq.gz',
+'ERR111/ERR11196080/9503.q20.fastq.gz',
+'ERR111/ERR11196020/9900.q20.fastq.gz',
+'ERR111/ERR11194146/7143.q20.fastq.gz',
+'ERR111/ERR11194058/8285.q20.fastq.gz',
+'ERR111/ERR11193992/9336.q20.fastq.gz',
+'ERR111/ERR11194209/9852.q20.fastq.gz',
+'ERR111/ERR11194231/9883.q20.fastq.gz',
+'ERR100/ERR10084529/BROU-A-10.q20.fastq.gz',
+'ERR100/ERR10084934/SALE-A-17.q20.fastq.gz',
+'ERR100/ERR10084952/Evs-0.q20.fastq.gz',
+'ERR100/ERR10084058/BARC-A-17.q20.fastq.gz',
+'ERR100/ERR10084899/BANI-C-12.q20.fastq.gz',
+'ERR100/ERR10084078/Cvi-0.q20.fastq.gz',
+'ERR100/ERR10084537/Cas-6.q20.fastq.gz',
+'ERR100/ERR10084521/MERE-A-13.q20.fastq.gz',
+'ERR100/ERR10084931/Hum-4.q20.fastq.gz',
+'ERR100/ERR10084908/San-9.q20.fastq.gz',
+'ERR100/ERR10084073/Med-0.q20.fastq.gz',
+'ERR100/ERR10084602/BANI-C-1.q20.fastq.gz',
+'ERR100/ERR10084536/Mos-5.q20.fastq.gz',
+'ERR100/ERR10084527/AUZE-A-5.q20.fastq.gz',
+'ERR100/ERR10084897/Mos-9.q20.fastq.gz',
+'ERR100/ERR10084532/Ler-0.q20.fastq.gz',
+'ERR100/ERR10084946/Mdc-14.q20.fastq.gz',
+'ERR100/ERR10084905/MONTM-B-7.q20.fastq.gz',
+'ERR100/ERR10084057/ANGE-B-10.q20.fastq.gz',
+'ERR100/ERR10084918/Sln-22.q20.fastq.gz',
+'ERR100/ERR10084604/CAMA-C-2.q20.fastq.gz',
+'ERR100/ERR10084077/BELC-C-10.q20.fastq.gz',
+'ERR100/ERR10084538/MONTM-B-16.q20.fastq.gz',
+'ERR100/ERR10084929/FERR-A-8.q20.fastq.gz',
+'ERR100/ERR10084063/Hum-2.q20.fastq.gz',
+'ERR100/ERR10084084/Med-3.q20.fastq.gz',
+'ERR100/ERR10084922/FERR-A-12.q20.fastq.gz',
+'ERR100/ERR10083811/22005.q20.fastq.gz',
+'ERR100/ERR10084904/Evs-12.q20.fastq.gz',
+'ERR100/ERR10084926/SALE-A-10.q20.fastq.gz',
+'ERR100/ERR10084939/Lor-16.q20.fastq.gz',
+'ERR100/ERR10084900/CAMA-C-9.q20.fastq.gz',
+'ERR100/ERR10084935/Alo-0.q20.fastq.gz',
+'ERR100/ERR10084937/BARC-A-12.q20.fastq.gz',
+'ERR100/ERR10084942/Cas-0.q20.fastq.gz',
+'ERR100/ERR10084958/Hom-4.q20.fastq.gz',
+'ERR100/ERR10084060/GAIL-B-11.q20.fastq.gz',
+'ERR100/ERR10084928/BARA-C-5.q20.fastq.gz',
+'ERR100/ERR10084518/Alo-19.q20.fastq.gz',
+'ERR100/ERR10084914/BARA-C-3.q20.fastq.gz',
+'ERR100/ERR10084910/PREI-A-14.q20.fastq.gz',
+'ERR100/ERR10084083/BELC-C-12.q20.fastq.gz',
+'ERR100/ERR10084948/Cat-0.q20.fastq.gz',
+'ERR100/ERR10084082/ANGE-B-2.q20.fastq.gz',
+'ERR100/ERR10084522/Met-6.q20.fastq.gz',
+'ERR100/ERR10084076/LACR-C-14.q20.fastq.gz',
+'ERR100/ERR10084920/Hom-0.q20.fastq.gz',
+'ERR100/ERR10084917/Tanz-1.q20.fastq.gz'
+]
+
+names = [path[19:][:-13] for path in paths]
+
+sequence = datadir + '{name}.q20.fastq.gz' 
+
+rule get_sequences:
+  input:
+    expand(sequence, name=names)
+
+rule get_sequence:
+  input:
+  output:
+    sequence 
+  params:
+    path = lambda wildcards: 'ftp://ftp.sra.ebi.ac.uk/vol1/run/%s' %[path[:18] for path in paths if '/'+wildcards.name+'.' in path][0]
+  shell:
+    """
+    mkdir -p {datadir}
+    wget -nc {params.path}/{wildcards.name}.q20.fastq.gz -P {datadir}
+    """
+# snakemake get_sequences -c1
+# should figure out how to parallelize as each sequence takes ~30m
+
+# --------------- download assemblies ------------------
+
+assembly_names = ['Col-0', 'Ey15-2', 'Kew-1']
+assembly = datadir + '{assembly_name}' + '.fna.gz'
+
+rule get_assemblies:
+  input:
+  output:
+    expand(assembly, assembly_name=assembly_names)
+  shell:
+    '''
+    wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/946/499/705/GCA_946499705.1_Col-0.6909.PacbioHiFiAssembly/GCA_946499705.1_Col-0.6909.PacbioHiFiAssembly_genomic.fna.gz
+    mv GCA_946499705.1_Col-0.6909.PacbioHiFiAssembly_genomic.fna.gz {output[0]}
+
+    wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/946/499/665/GCA_946499665.1_Ey15-2.9994.PacbioHiFiAssembly/GCA_946499665.1_Ey15-2.9994.PacbioHiFiAssembly_genomic.fna.gz
+    mv GCA_946499665.1_Ey15-2.9994.PacbioHiFiAssembly_genomic.fna.gz {output[1]}
+
+    wget ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/933/208/065/GCA_933208065.1_ddAraThal4.1/GCA_933208065.1_ddAraThal4.1_genomic.fna.gz
+    mv GCA_933208065.1_ddAraThal4.1_genomic.fna.gz {output[2]}
+    '''
+# snakemake get_assemblies -c1
+
+# ------------------ download reference -----------------
+
+reference = datadir + 'SupportingData_A.thaliana_CLR_vs_HiFi/TAIR10_masked/TAIR10.hard_masked.fa'
+
+rule get_reference:
+  input:
+  output:
+    reference
+  shell:
+    '''
+    wget https://zenodo.org/record/7326462/files/SupportingData_A.thaliana_CLR_vs_HiFi.zip?download=1
+    unzip SupportingData_A.thaliana_CLR_vs_HiFi.zip?download=1
+    mv SupportingData_A.thaliana_CLR_vs_HiFi {datadir}
+    rm -rf __MACOSX
+    rm -f SupportingData_A.thaliana_CLR_vs_HiFi.zip?download=1
+    '''
+# snakemake get_reference -c1
+
+# -------------------- get hifiasm ---------------------
+
+hifiasm = progdir + 'hifiasm/hifiasm'
+
+rule get_hifiasm:
+  input:
+  output:
+    hifiasm
+  shell:
+    '''
+    module load gcc
+    git clone https://github.com/chhylp123/hifiasm
+    cd hifiasm && make
+    cd ..
+    mkdir -p {progdir}
+    mv hifiasm {progdir}
+    '''
+# snakemake get_hifiasm -c1
+
+# --------------------- assemble hifi -----------------
+
+asm = sequence.replace('.q20.fastq.gz','.asm.bp.p_ctg.gfa')
+
+rule assemble_hifis:
+  input:
+    expand(asm, name=names)
+
+rule assemble_hifi:
+  input:
+    hifiasm,
+    sequence
+  output:
+    asm
+  threads: 40
+  resources:
+    time=12*60 #test took just under 1h, but 21 took >2h, 4 took >4h, 3 took >8h, all less than 12h
+  params: 
+    prefix = asm.replace('.bp.p_ctg.gfa','')
+  shell:
+    '''
+    ./{input[0]} -o {params.prefix} -t {threads} -l0 -f0 {input[1]}
+    '''
+# snakemake --profile slurm assemble_hifis --jobs 63
+
+# -------------------- convert to fasta -------------
+
+fasta = asm.replace('.gfa','.fa')
+
+rule fastas:
+  input:
+    expand(fasta, name=names)
+
+rule fasta:
+  input:
+    asm
+  output:
+    fasta
+  shell:
+    '''
+    awk '/^S/{{print ">"$2;print $3}}' {input} > {output}
+    '''
+
+# ------------------- ragtag --------------------
+
+ragtag = pybin + 'ragtag.py'
+minimap2 = progdir + 'minimap2/minimap2'
+unimap = progdir + 'unimap/unimap'
+mummer = progdir + 'MUMmer3.23/mummer' 
+
+rule get_ragtag:
+  input:
+  output:
+    ragtag,
+    minimap2,
+    unimap,
+    mummer
+  shell:
+    '''
+    #module load intelpython
+    #conda install -c bioconda ragtag #recommended install but my cluster says avoid conda
+    pip install ragtag
+    
+    module load gcc
+    git clone https://github.com/lh3/minimap2
+    cd minimap2 && make
+    cd ..
+    mv minimap2 {progdir}
+
+    git clone https://github.com/lh3/unimap
+    cd unimap && make
+    cd ..
+    mv unimap {progdir}
+
+    wget https://sourceforge.net/projects/mummer/files/latest/download    
+    tar -xvzf download
+    rm -rf download 
+    cd MUMmer3.*
+    make install
+    cd ..
+    mv MUMmer3.* {progdir}
+    '''
+
+# ------------------- scaffold --------------------
+# note that Wlodzimierz et al scaffold 14 accessions (dont say which but likely "relicts") to "a Bionano optical map of IP-Ini-0", which I don't have, so scaffold all against ref
+# i think this might be in the data/Supporting... folder with the hard masked TAIR10 reference.
+
+scaffold = fasta.replace('.asm.bp.p_ctg.fa','/') + 'ragtag.scaffold.fasta'
+
+rule scaffolds:
+  input:
+    expand(scaffold, name=names)
+
+rule scaffold:
+  input:
+    reference,
+    fasta,
+    ragtag, minimap2, unimap, mummer
+  output:
+    scaffold
+  threads: 1
+  shell:
+    '''
+    ragtag.py scaffold -o {datadir}{wildcards.name} --aligner {minimap2} -t {threads} -q 60 -f 100000 -i 0.5 --remove-small -w {input[0]} {input[1]}
+    '''
+# each ~1m
+
+#note that Wlodzimierz et al next do some manual curating of scaffolds, but since I've used a different ref, leaving for now. See https://github.com/vlothec/pancentromere/tree/main/manually_curated_AGP_files
+
+# ------------------- filter to chromosomes ----------
+
+genome = fasta.replace('.asm.bp.p_ctg.fa','.Chr1to5.fa')
+
+rule genomes:
+  input:
+    expand(genome, name=names)
+
+rule genome:
+  input:
+    scaffold
+  output:
+    genome
+  params:
+    temp = scaffold + '.noragtagtag'
+  shell:
+    '''
+    sed 's/_RagTag//' {input} > {params.temp} 
+    awk -vRS=">" 'BEGIN{{t["Chr1"]=1;t["Chr2"]=1;t["Chr3"]=1;t["Chr4"]=1;t["Chr5"]=1}}; {{if($1 in t){{printf ">%s",$0}}}}' {params.temp} > {output}
+    rm -f {params.temp}
+    '''
+
+# -------------------- prepare assemblies -----------------
+
+assembly_fa = assembly.replace('fna.gz','Chr1to5.fa')
+
+ruleorder: assembly_fa > genome
+
+rule assembly_fas:
+  input:
+    expand(assembly_fa, assembly_name=assembly_names)
+
+rule assembly_fa:
+  input:
+    assembly
+  output:
+    assembly_fa
+  shell:
+    '''
+    gzip -dc {input} | sed 's/^>.*chromosome:\s/>Chr/' > {output}
+    ''' 
+
+# -------------------- align assemblies -----------------
+
+sambam = genome.replace('.Chr1to5.fa','.{end}') 
+ends = ['sam','bam','bam.bai'] 
+#Col0 = expand(assembly_fa, assembly_name=['Col-0'])
+
+rule sambams:
+  input:
+    expand(sambam, name=names+assembly_names, end=ends)
+
+rule sambam:
+  input:
+    #Col0,
+    reference, 
+    genome,
+    minimap2
+  output:
+    expand(sambam, end=ends, allow_missing=True)
+  threads: 1
+  shell:
+    '''
+    {input[2]} -a -x asm5 --cs -r2k -t {threads} {input[0]} {input[1]} > {output[0]}
+    module load samtools/1.13
+    samtools sort -@{threads} -o {output[1]} {output[0]}
+    samtools index {output[1]}
+    ''' 
+# ran all at once on debugjob, <20m and 50% ram
+
+# -------------------- individual chromosome vcfs --------------------
+
+vcf = sambam.replace('.{end}','.Chr{CHR}.{end}')
+ends = ['called.vcf.gz','called.vcf.gz.tbi']
+
+rule vcfs:
+  input:
+    expand(vcf, name=names+assembly_names, CHR=CHRS, end=ends)
+
+rule vcf:
+  input:
+    #Col0,
+    reference,
+    expand(sambam, end=['bam'], allow_missing=True)
+  output:
+    expand(vcf, end=ends, allow_missing=True)
+  threads: 1
+  params:
+    temp0=vcf.replace('{end}','vcf'),
+    temp1=vcf.replace('{end}','called.vcf')
+  shell:
+    '''
+    module load samtools/1.13
+    bcftools mpileup -f {input[0]} --threads {threads} -r Chr{wildcards.CHR} -o {params.temp0} -A -O v {input[1]}
+    bcftools call -c {params.temp0} -o {params.temp1}
+    bgzip -f -@ {threads} {params.temp1}
+    tabix -f -p vcf {output[0]}
+    rm -f {params.temp0}
+    '''
+# ran on debugjob with -c80, about 5 mins each, not much mem
+
+# -------------------- chromosome vcfs --------------------
+
+bigvcf = datadir + 'T2T_Athaliana_66.Chr{CHR}.{end}'
+ends = ['vcf.gz','vcf.gz.tbi']
+
+rule merge_vcfs:
+  input:
+    expand(bigvcf, CHR=CHRS, end=ends)
+
+rule merge_vcf:
+  input:
+    expand(vcf, name=names+assembly_names, end=['called.vcf.gz'], allow_missing=True)
+  output:
+    expand(bigvcf, end=ends, allow_missing=True)
+  threads: 80 
+  resources: 
+    time = 60*2
+  params:
+    temp0=bigvcf.replace('{end}','vcf'),
+  shell:
+    '''
+    module load samtools/1.13
+    bcftools merge -m all --threads {threads} -o {params.temp0} {input}
+    bgzip -f -@ {threads} {params.temp0}
+    tabix -f -p vcf {output[0]}
+    '''
+# just over an hour each
+
+# -------------------- get repeats -------------------
+
+#repeats = datadir + 'Col-0.Repeats_merged.gff'
+
+#rule get_repeats:
+#  input:
+#  output:
+#    repeats
+#  shell:
+#    '''
+#    wget https://raw.githubusercontent.com/vlothec/pancentromere/main/variant_calling/based_on_HiFi_reads/Col-0.Repeats_merged.gff -P {datadir}
+#    '''
+
+## ---------------------- convert repeats ---------------
+#
+#repeats_tsv = repeats.replace('gff','tsv')
+#
+#rule convert_repeats:
+#  input:
+#    repeats
+#  output:
+#    repeats_tsv
+#  shell:
+#    '''
+#    tail -n+3 {input} | awk 'BEGIN {{OFS="\t"}}; {{print $1,$4,$5}}' > {output}
+#    '''
+
+# -------------------- filter VCF --------------------
+
+#fbigvcf = bigvcf.replace('{end}','nomissing.nohet.justSNPs.norepeats.{end}')
+fbigvcf = bigvcf.replace('{end}','nomissing.nohet.justSNPs.{end}')
+ends = ['vcf.gz','vcf.gz.tbi']
+
+ruleorder: filter_vcf > merge_vcf
+
+rule filter_vcfs:
+  input:
+    expand(fbigvcf, CHR=CHRS, end=ends)
+
+rule filter_vcf:
+  input:
+    expand(bigvcf, end=['vcf.gz'], allow_missing=True),
+    #repeats_tsv
+  output:
+    expand(fbigvcf, end=ends, allow_missing=True)
+  threads: 16 
+  params:
+    temp0=bigvcf.replace('{end}','nomissing.vcf'),
+    temp1=bigvcf.replace('{end}','nomissing.nohet.vcf'),
+    temp2=bigvcf.replace('{end}','nomissing.nohet.justSNPs.vcf'),
+    #temp3=bigvcf.replace('{end}','nomissing.nohet.justSNPs.norepeats.vcf')
+  shell:
+    '''
+    module load samtools/1.13
+    bcftools view -e 'GT[*]="mis"' {input} > {params.temp0} 
+    bcftools view -e 'GT[*]="het"' {params.temp0} > {params.temp1}
+    bcftools view -M2 -m2 -v snps {params.temp1} > {params.temp2}
+    bgzip -@ {threads} {params.temp2}
+    tabix -p vcf {output[0]}
+    rm -f {params.temp0} {params.temp1} {params.temp2}
+    '''
+    #bcftools view -T ^{input[1]} -o {params.temp3} {params.temp2}
+    #bgzip -@ {threads} {params.temp3}
+    #rm -f {params.temp0} {params.temp1} {params.temp2} #{params.temp3}
+
+# took 10m running all together on a node
+# bcftools stats <file> #to get number of SNPs, etc
+
+## --------------------- filter repeats ------------------
+#
+#rfbigvcf = fbigvcf.replace('{end}','norepeats.{end}')
+#ends = ['vcf.gz', 'vcf.gz.tbi']
+#
+#ruleorder: filter_repeat > merge_vcf
+#
+#rule filter_repeats:
+#  input:
+#    expand(rfbigvcf, end=ends, CHR=CHRS)
+#
+#rule filter_repeat:
+#  input:
+#    repeats_tsv,
+#    fbigvcf.replace('{end}','vcf.gz')
+#  output:
+#    expand(rfbigvcf, end=ends, allow_missing=True)
+#  params:
+#    temp0=rfbigvcf.replace('{end}','vcf')
+#  threads: 16
+#  shell:
+#    '''
+#    module load samtools/1.13
+#    bcftools view -T ^{input[0]} -o {params.temp0} {input[1]}
+#    bgzip -@ {threads} {params.temp0}
+#    tabix -p vcf {output[0]}
+#    '''
+
+# -------------------- convert vcf to haps/sample -------
+
+hapsamples = fbigvcf
+ends = ['hap.gz','samples','hap']
+
+rule vcf_to_haps:
+  input:
+    expand(hapsamples, CHR=CHRS, end=ends)
+
+ruleorder: vcf_to_hap > filter_vcf
+
+rule vcf_to_hap:
+  input:
+    expand(fbigvcf, end=['vcf.gz','vcf.gz.tbi'], allow_missing=True)
+  output:
+    expand(hapsamples, end=ends, allow_missing=True)
+  params:
+    prefix = hapsamples.replace('.{end}','') #bcftools adds its own suffixs
+  resources:
+    time = 1   
+  threads: 16
+  shell:
+    '''
+    module load samtools/1.13
+    bcftools convert --threads {threads} --hapsample {params.prefix} {input[0]}
+    bgzip -cd {output[0]} > {output[2]}
+    '''
+# snakemake vcf_to_haps -c80 #1 min on debugjob
+
+# -------------------- make haploid haps ------------------
+
+haploid_hap = hapsamples.replace('.{end}','_haploid.hap')
+
+rule haploid_haps:
+  input:
+    expand(haploid_hap, CHR=CHRS)
+
+rule haploid_hap:
+  input:
+    hapsamples.replace('{end}','hap')
+  output:
+    haploid_hap
+  run:
+    with open(input[0],'r') as f:
+      with open(output[0],'w') as g:
+        for line in f:
+          data = line.split(' ')
+          new_data = (' ').join(data[:5]) + ' ' + (' ').join([i[0] for i in data[5:][::2]]) + '\n'
+          g.write(new_data)
+
+# -------------------- make haploid samples ------------------
+
+haploid_sample = hapsamples.replace('.{end}','_haploid.samples')
+
+rule haploid_samples:
+  input:
+    expand(haploid_sample, CHR=CHRS)
+
+rule haploid_sample:
+  input:
+    hapsamples.replace('{end}','samples')
+  output:
+    haploid_sample
+  shell:
+    '''
+    awk 'NR<3 {{print}} NR>2 {{print $1, "NA", 0}}' {input} | sed -e 's/\(data\/\|.bam\)//g' > {output}
+    '''
+
+# ------------------- get bx-python --------------------
+# used to convert multi species alignments (maf) to fasta (fa)
+
+maf_to_fa = progdir + 'bx-python/scripts/maf_to_concat_fasta.py'
+
+rule get_bxpython:
+  input:
+  output:
+    maf_to_fa
+  shell:
+    '''
+    git clone https://github.com/bxlab/bx-python.git 
+    mv bx-python/ {progdir} #causing error with snakemake, so just do it yourself :(
+    '''
+
+# ------------------- make fasta with outgroup genomes ---------------------
+# convert maf to fasta, which we can convert into est-sfs input format 
+# Arabidopsis lyrata, Boechera stricta, and Malcolmia maritima
+
+outgroup_maf = datadir + 'Thal_ref_Boec_Lyra_Malc_outgroups_nodupes_orthoonly.maf' #multi-species alignment from Tyler Kent (Wright lab, University of Toronto)
+outgroup_fa = datadir + 'Lyra_Boec_Malc.fa' #fasta with outgroup genomes
+
+rule maf_to_fa:
+  input:
+    outgroup_maf
+  output:
+    outgroup_fa
+  resources:
+    time = 10
+  threads: 1 
+  shell:
+    '''
+    python {maf_to_fa} Lyra,Boec,Malc < {input} > {output}
+    '''
+
+## ------------------- get lyrata sequence ------------------
+#
+#lyrata = datadir + 'lyrata_mn47.fa'
+#
+#rule get_lyrata:
+#  input:
+#  output:
+#    lyrata
+#  shell:
+#    '''
+#    wget https://figshare.com/ndownloader/files/39633640
+#    gzip -cd 39633640 > {output}
+#    rm -f 39633640
+#    '''
+#
+## ------------------ align lyrata to col-0 ------------------
+#
+#lyrata_aligned = lyrata + '_aligned.{end}'
+#ends = ['sam','bam','bam.bai'] 
+#
+#rule align_lyrata:
+#  input:
+#    Col0, 
+#    lyrata,
+#    minimap2
+#  output:
+#    expand(lyrata_aligned, end=ends)
+#  threads: 1
+#  shell:
+#    '''
+#    {input[2]} -a -x asm20 --cs -r2k -t {threads} {input[0]} {input[1]} > {output[0]}
+#    module load samtools/1.13
+#    samtools sort -@{threads} -o {output[1]} {output[0]}
+#    samtools index {output[1]}
+#    ''' 
+#
+## --------------------- get aligned lyrata fasta ------------------
+
+#outgroup_fa = lyrata_aligned.replace('{end}','fa') 
+
+# --------------------- make est-sfs input ---------------------------
+
+est_input = haploid_hap.replace('.hap','.est')
+
+rule est_inputs:
+  input:
+    expand(est_input, CHR=CHRS) 
+
+rule est_input:
+  input:
+    outgroup_fa,
+    #lyrata_aligned.replace('{end}','bam'),
+    haploid_hap 
+  output:
+    est_input
+  resources:
+    time = 5 
+  threads: 1
+  run:
+    from Bio import SeqIO #reads fastas
+    # load outgroup sequences
+    print('reading outgroups from',input[0])
+    out_seqs = []
+    for seq_record in SeqIO.parse(input[0], "fasta"):
+      out_seqs.append(seq_record.seq) #sequence of outgroup
+    nouts = len(out_seqs) #number of outgroups 
+    print(nouts, 'outgroups')
+    #import pysam
+    #samfile = pysam.AlignmentFile(input[0], "rb")
+    # make est file
+    print('writing output to', output)
+    with open(output[0], 'w') as out: #file to write to
+      print('reading haps from',input[1])
+      with open(input[1], 'r') as f: #haps file to read
+        for i,line in enumerate(f): #load line by line for memory sake
+          data = line.split() #divide line into elements (separated by whitespace)
+          if i == 0: #pick any row to just do this once
+            nsamples = int(len(data) - 5) #number of samples (number of columns minus the first 5, which contain: CHR, ID, POS, REF, ALT)
+            print(nsamples, 'samples')
+          ref = data[3] #reference allele
+          alt = data[4] #alternate allele
+          nalt = sum(list(map(int,data[5:]))) #number of alternate alleles (map converts strings to integers); assumes ref=0 and alt=1
+          nref = nsamples - nalt #number of reference alleles (assumes biallelic)
+          counts = [0,0,0,0] #number of A,C,G,T (order specified by est-sfs)
+          for allele,count in [[ref,nref],[alt,nalt]]: #for ref and alt put the count in the right bin
+            if allele == 'A':
+              counts[0] = count
+            elif allele == 'C':
+              counts[1] = count
+            elif allele == 'G':
+              counts[2] = count
+            else:
+              counts[3] = count
+          outcounts = [[0,0,0,0] for _ in range(nouts)] #initialize
+          site = int(data[2]) - 1 #take a look at this site in the outgroups; subtract one to move to python's 0 indexing 
+          site = site + sum(chr_lens[:(int(wildcards.CHR) - 1)]) # add length of preceding chromosomes to find correct index in outgroup fasta	
+          for j in range(nouts):
+            allele = out_seqs[j][site]
+            if allele == 'A' or allele == 'a':
+              outcounts[j][0] = 1
+            elif allele == 'C' or allele == 'c':
+              outcounts[j][1] = 1
+            elif allele == 'G' or allele == 'g':
+              outcounts[j][2] = 1
+            elif allele == 'T' or allele == 't':
+              outcounts[j][3] = 1
+          out.write(','.join(map(str,counts)) + ' ' + ' '.join([','.join(map(str,i)) for i in outcounts]) + '\n') #write in est format, line by line
+    print('done')
+# <5m together on debugjob
+
+# -------------------- get est-sfs ---------------------
+
+name = 'est-sfs-release-2.04' 
+estsfs = progdir + name + '/est-sfs'
+
+rule get_estsfs:
+  input:
+  output:
+    estsfs
+  shell:
+    '''
+    wget https://sourceforge.net/projects/est-usfs/files/{name}.tar.gz -P {progdir}
+    cd {progdir}
+    tar -xzf {name}.tar.gz
+    cd {name}
+    module load gcc/9.2.0
+    module load gsl/2.5
+    make
+    '''
+# should have added 'rm -f {name}.tar.gz' after unzipping
+
+# ------------------ make est-sfs config and seed files -----------------------
+
+config = datadir + 'estsfs-config.txt' 
+seed = datadir + 'estsfs-seed.txt'
+
+rule estsfs_setup:
+  input:
+  output:
+    config,
+    seed
+  resources:
+    time = 1
+  threads: 1
+  shell:
+    '''
+    printf 'n_outgroup 3\nmodel 1\nnrandom 3\n' > {output[0]} #number of outgroups, model (1=kimura 2 parameter), number of times to find max likelihood (to ensure convergence)
+    echo '60179025' > {output[1]} 
+    '''
+
+# -------------------- run est-sfs ---------------------------------
+
+est_output = est_input.replace('.est','{end}.txt')
+ends = ['_sfs','_p-anc']
+
+rule run_estsfss:
+  input:
+    expand(est_output, CHR=CHRS, end=ends)
+
+rule run_estsfs:
+  input:
+    estsfs,
+    config,
+    est_input,
+    #seed #dont include as input because it gets updated when run
+  output:
+    expand(est_output, end=ends, allow_missing=True) 
+  threads: 1 
+  shell:
+    '''
+    module load gcc/9.2.0
+    module load gsl/2.5
+    {input[0]} {input[1]} {input[2]} {seed} {output[0]} {output[1]} 
+    '''
+# group job just over 1 hour 
+# snakemake run_estsfss --profile slurm --groups run_estsfs=estsfs --group-components estsfs=5 --jobs 1 -n
+
+# ----------------- polarize haps ------------------------
+
+polarized_hap = haploid_hap.replace('.hap','_polarized.hap')
+
+rule polarize_haps:
+  input:
+    expand(polarized_hap, CHR=CHRS)
+
+rule polarize_hap:
+  input:
+    est_input,
+    est_output.replace('{end}','_p-anc'),
+    haploid_hap
+  output:
+    polarized_hap 
+  threads: 1
+  run:
+    nucs = ['A', 'C', 'G', 'T'] #order of nucleotides in est
+    nflips = 0 #counting how many times the reference allele is derived
+    ntot = 0
+    with open(input[0],'r') as f: #est input file with counts of alleles 
+      with open(input[1],'r') as g:  #p-values from est-sfs
+        for _ in range(8): #skip first 8 lines (header)
+          next(g)
+        with open(input[2],'r') as h: #hap file
+          with open(output[0],'w') as out: #polarized hap file
+            for i, (est, p, hap) in enumerate(zip(f, g, h)): #one line at a time
+              # get major and minor alleles (note: do this like est-sfs.c, which takes care of alleles at equal frequency)
+              n = [int(i) for i in est.split(' ')[0].split(',')] #count of nucleotides at site within focal species
+              max_n = -1
+              for i in range(4):
+                if n[i] > max_n:
+                  max_n = n[i]
+                  major = i              
+              major = nucs[major] #most numerous allele 
+              min_n = -1
+              for i in range(4):
+                if n[i] > min_n and i != major:
+                  min_n = n[i]
+                  minor = i              
+              minor = nucs[minor] #second most numerous allele
+              # make major ancestral unless probability of this is <0.5
+              pv = float(p.split(' ')[2]) # probability major is ancestral
+              ancestral = major
+              derived = minor
+              if pv < 0.5:
+                ancestral = minor
+                derived = major
+              # get ref and alt alleles
+              haps = hap.split(' ')
+              reference = haps[3] #reference allele
+              alternate = haps[4] #alternate allele
+              # only need to flip allele if reference is not ancestral
+              if reference != ancestral:
+                nflips += 1
+                haps[3] = ancestral #make the reference allele ancestral
+                haps[4] = derived #make the alternate allele derived
+                haps[5:] = [1 - int(i) for i in haps[5:]] #flip the haps (make 0 -> 1 and 1 -> 0)
+                hap = (' ').join(map(str,haps)) + '\n'
+              # write to outfile
+              out.write(hap)
+              ntot += 1
+    print('flipped',nflips,'out of',ntot,'alleles, as a fraction:',nflips/ntot)
+# runs in less than a min each on login nodes
+
+# --------------- get mask ------------------
+
+mask = datadir + 'Arabidopsis_thaliana.TAIR10.dna_rm.chromosome.{CHR}.fa.gz' 
+
+rule get_masks:
+  input:
+  output:
+    expand(mask, CHR=CHRS)
+  shell:
+    '''
+    for i in {{1..5}}; do wget https://ftp.ensemblgenomes.ebi.ac.uk/pub/plants/release-56/fasta/arabidopsis_thaliana/dna/Arabidopsis_thaliana.TAIR10.dna_rm.chromosome.$i.fa.gz -P {datadir}; done 
+    '''
+# couple minutes
+
+# ----------------- convert mask ----------------
+
+mask_np = mask.replace('fa.gz','NP.fa')
+
+rule convert_masks:
+  input:
+    expand(mask, CHR=CHRS)
+  output:
+    expand(mask_np, CHR=CHRS)
+  shell:
+    '''
+    for i in {{1..5}}; do gzip -cd {datadir}Arabidopsis_thaliana.TAIR10.dna_rm.chromosome.$i.fa.gz | sed 's/\(A\|C\|G\|T\)/P/g' > {datadir}Arabidopsis_thaliana.TAIR10.dna_rm.chromosome.$i.NP.fa; done
+    '''
+# couple minutes
+# note this converts some letters in first line to P's too, eg TAIR10 -> PPIR, but being lazy
+
+# -------------------- get relate ------------------
+
+relate = progdir + 'relate/'
+
+rule get_relate:
+  input:
+  output:
+   relate + 'bin/Relate'
+  resources:
+    time = 1
+  threads: 1
+  shell:
+    '''
+    git clone https://github.com/MyersGroup/relate.git
+    cd relate/build
+    module load cmake/3.21.4 gcc/8.3.0 gsl/2.5
+    cmake ..
+    make
+    #cd -
+    #mv relate/ {progdir} #for some reason this fails with 'file exists', even when it doesnt exist (or so it seems), so i did this last step manualy
+    ''' 
+
+# ----------- mask ------------
+
+masked_hap = polarized_hap.replace('.hap', '_masked.{end}')
+ends = ['haps','dist']
+
+rule mask_haps:
+  input:
+    expand(masked_hap, CHR=CHRS, end=ends)
+
+rule mask_hap:
+  input:
+    polarized_hap,
+    haploid_sample,
+    mask_np,
+    relate + 'bin/Relate' #to force download above
+  output:
+    expand(masked_hap, end=ends, allow_missing=True)
+  params:
+    out = masked_hap.replace('.{end}','') #relate adds suffix
+  shell:
+    '''
+      {relate}bin/RelateFileFormats \
+                 --mode FilterHapsUsingMask\
+                 --haps {input[0]} \
+                 --sample {input[1]} \
+                 --mask {input[2]} \
+                 -o {params.out} 
+    '''
+# couple seconds each 
+
+# --------------------- get recombination map -----------------------
+
+rmap = datadir + 'arab_chr{CHR}_map_loess.txt'
+
+rule get_rmaps:
+  input:
+  output:
+    expand(rmap, CHR=CHRS)
+  shell:
+    """
+    wget https://stdpopsim.s3-us-west-2.amazonaws.com/genetic_maps/AraTha/salome2012_maps.tar.gz -P {datadir}
+    tar -xf {datadir}salome2012_maps.tar.gz -C {datadir}
+    """
+
+# ----------------- convert recombination map ---------------------
+    
+rmap_relate = rmap.replace('txt','map')
+
+rule convert_maps:
+  input:
+    expand(rmap_relate, CHR=CHRS)
+
+rule convert_map:
+  input:
+    rmap
+  output:
+    rmap_relate
+  threads: 1
+  run:
+    # load map
+    data = []
+    with open(input[0]) as f:
+      next(f) #skip header
+      for line in f.readlines():
+        data.append(line.split()) #chr, pos, rate, 0
+    # calculate recombination distances (cMs)
+    cms = [0] #initiate with 0 cM at first position
+    for i in range(len(data)-1):
+      cms.append(cms[i] + (int(data[i+1][1]) - int(data[i][1]))*float(data[i][2])*1e-6) #get cM of next position
+    # write data
+    with open(output[0], 'w') as out:
+      for i,line in enumerate(data):
+        row = [line[1], str(float(line[2])*0.05), str(cms[i]*0.05)] #pos, rate, cMs (multiply cM by 0.05=1/20 to account for 5% outcrossing)
+        out.write(' '.join(i for i in row))
+        out.write(' \r\n')
+
+# ------------------ run relate ----------------------
+
+# mutation rate and effective population size from stdpopsim: https://popsim-consortium.github.io/stdpopsim-docs/stable/catalog.html#sec_catalog_AraTha
+# relate's N variable is effective popn size of haplotypes, not individuals, so multiple by ploidy 
+# memory is gb per thread
+
+ancmut = masked_hap.replace('.{end}','_{Ne}Ne_{m}m.{end}')
+ends = ['anc','mut']
+
+rule ancmuts:
+ input:
+   expand(ancmut, CHR=CHRS, Ne=Nes, m=ms, end=ends)
+    
+rule ancmut:
+  input:
+    expand(masked_hap, end=['haps','dist'], allow_missing=True),
+    haploid_sample,
+    rmap_relate
+  output:
+    expand(ancmut, end=ends, allow_missing=True)
+  params:
+    prefix = ancmut.replace(datadir,'').replace('.{end}','') #relate adds its own suffixs and needs to output into current directory
+  resources:
+    time = 60 
+  threads: 1 
+  shell:
+    '''
+    module load gcc/9.2.0 #need this to run on compute nodes
+    TMPDIR="relate_chr{wildcards.CHR}_Ne{wildcards.Ne}_m{wildcards.m}"
+    mkdir $TMPDIR
+    cd $TMPDIR 
+    #../{relate}scripts/RelateParallel/RelateParallel.sh --threads {threads}
+    ../{relate}bin/Relate --mode All \
+      --haps ../{input[0]} \
+      --dist ../{input[1]} \
+      --sample ../{input[2]} \
+      --map ../{input[3]} \
+      -N {wildcards.Ne} \
+      -m {wildcards.m} \
+      -o {params.prefix} \
+      --seed 1 \
+      --memory 5
+    mv {params.prefix}.mut {params.prefix}.anc ../{datadir}
+    cd - 
+    rm -rf $TMPDIR
+    '''
+# can run all at once <1h on debugjob
+
+# -------------- get metadata --------------------
+
+metadata = datadir + '66_genomes_summary.txt'
+
+rule get_metadata:
+  input:
+  output:
+    metadata
+  shell:
+    '''
+    wget https://raw.githubusercontent.com/vlothec/pancentromere/main/CENH3_phylogeny/66_genomes_summary.txt -P {datadir}
+    '''
+
+# ------------- define populations ---------
+
+poplabels = datadir + 'T2T_Athaliana_66.poplabels'
+
+rule poplabels:
+  input:
+    haploid_sample.replace('{CHR}','1'), #choose any chromosome, all same
+    metadata
+  output:
+    poplabels
+#  shell:
+#    '''
+#    echo "sample population group sex" > {output}
+#    awk 'NR>2 {{print $1, 0, 0, 1}}' {input} >> {output}
+#    '''
+  run:
+    # load ids
+    ids = []
+    with open(input[0], mode='r') as file:
+      next(file); next(file) #skip header and 0 row
+      for line in file: 
+        ids.append(line.strip().split(' ')[0]) #accession id
+    # load metadata
+    metadata = []
+    with open(input[1],'r') as file:
+      next(file) #skip header
+      for line in file:
+        metadata.append(line.strip().split('\t')) #row of metadata
+    # the accession id is in 2 places, and a bit inconsistent, so isolate both
+    accessions = [i[1].strip().replace('_','.').split('.')[0].replace('"','') for i in metadata]
+    accessions2 = [i[3] for i in metadata]
+    # now get the metadata indices in order of the ids in the sample file
+    order = []
+    for id in ids:
+      try:
+        ix = accessions.index(id)
+      except:
+        ix = accessions2.index(id)
+      order.append(ix)
+    # make poplabels file
+    with open(output[0],'w') as out:
+      out.write('sample population group sex\n')
+      for i,ix in enumerate(order):
+        #out.write(ids[i] + ' 0 ' + metadata[ix][2].replace(' ','-') + ' 1\n' ) #1 for haploids, PCA group as group
+        out.write(ids[i] + ' ' + metadata[ix][2].replace(' ','-') + ' 0 1\n' ) #1 for haploids, PCA group as pop
+
+# -------------------- estimate pop size, reestimate branch lengths, estimate mutation rate -------------------
+
+ancmutcoal = ancmut.replace('.{end}','_popsize_{numiter}numiter_{threshold}threshold{end}')
+ends = ['.anc','.mut','.coal','.dist','.pairwise.coal','.pairwise.bin','.pdf','_avg.rate']
+
+rule ancmutcoals:
+  input:
+    expand(ancmutcoal, CHR=CHRS, Ne=Nes, m=ms, numiter=numiters, threshold=thresholds, end=ends)
+ 
+rule ancmutcoal:
+  input:
+    expand(ancmut, end=['anc','mut'], allow_missing=True),
+    poplabels
+  output:
+    expand(ancmutcoal, end=ends, allow_missing=True)
+  params:
+    prefix_in = ancmut.replace('.{end}',''),
+    prefix_out = ancmutcoal.replace('{end}','')
+  threads: 1
+  shell:
+    '''
+    module load gcc/8.3.0 #needed for relate
+    module load r/4.2.2-batteries-included #R needed for plots
+    {relate}scripts/EstimatePopulationSize/EstimatePopulationSize.sh \
+              -i {params.prefix_in} \
+              -m {wildcards.m} \
+              --years_per_gen 1 \
+              --poplabels {input[2]} \
+              --seed 1 \
+              --num_iter {wildcards.numiter} \
+              --threshold {wildcards.threshold} \
+              --threads {threads} \
+              -o {params.prefix_out}
+    '''
+# 2m per iter + 2m to reinfer at end
+
+# -------------- convert to tree sequences (for checks) ------------------
+
+treeseq = ancmutcoal.replace('{end}','.trees')
+
+rule treeseqs:
+  input:
+    expand(treeseq, CHR=CHRS, Ne=Nes, m=ms, numiter=numiters, threshold=thresholds)
+
+rule treeseq:
+  input:
+    expand(ancmutcoal, end=['.anc','.mut'], allow_missing=True)
+  output:
+    treeseq
+  params:
+    prefix_in = ancmutcoal.replace('{end}',''),
+    prefix_out = treeseq.replace('.trees','')
+  shell:
+    '''
+    {relate}bin/RelateFileFormats \
+                 --mode ConvertToTreeSequence \
+                 -i {params.prefix_in} \
+                 -o {params.prefix_out}
+    '''
+
+# ------------ decide which trees to sample ----------------
+
+bps = ancmut.replace('{end}','bps')
+
+rule get_bps:
+  input:
+    expand(bps, CHR=CHRS, Ne=Nes, m=ms)
+
+checkpoint get_bp:
+  input:
+    expand(ancmut, end=['anc','mut'], allow_missing=True)
+  output:
+    bps 
+  run:
+    print('getting tree indices')
+    ixs_start=[]
+    ixs_end=[]
+    with open(input[0], "r") as f:
+      for i, line in enumerate(f): #each line is a tree, see https://myersgroup.github.io/relate/getting_started.html#Output
+        if i==1: 
+          n = int(line.split()[1]) #number of trees on this chromosome
+          trees = [i for i in range(0,n+1,TREESKIP)] #which trees to sample
+        if i > 1 and i-2 in trees:
+          ixs_start.append(int(line.split(':')[0])) #index of first snp in sampled tree
+        if i > 2 and i-3 in trees: 
+          ixs_end.append(int(line.split(':')[0])-1) #index of last snp in sampled tree
+    print('choose',len(ixs_start),'trees')
+    print('getting start and stop basepairs')
+    bps_start = []
+    bps_end = []
+    with open(input[1],"r") as f:
+      for i,line in enumerate(f):
+        if i>0 and int(line.split(';')[0]) in ixs_start:
+          bps_start.append(int(line.split(';')[1])) #position of first snp in sampled tree
+        if i>1 and int(line.split(';')[0]) in ixs_end:
+          bps_end.append(int(line.split(';')[1])) #position of last snp in sampled tree
+    print('writing to file')
+    with open(output[0], 'w') as out:
+      for start,end in zip(bps_start,bps_end):
+        out.write(str(start) + ' ' + str(end) + '\n')
+
+# ------------ sample branch lengths at a particular location -------------
+
+tree = ancmutcoal.replace('{end}','_{start}-{stop}bps_{nsamples}nsamples.newick')
+
+def input_func(name):
+
+  def input_files(wildcards):
+    filenames = []
+    for CHR in CHRS:
+      for Ne in Nes:
+        for m in ms:
+          infile = checkpoints.get_bp.get(CHR=CHR, Ne=Ne, m=m).output[0]
+          with open(infile,'r') as f:
+            for line in f:
+              i,j = line.strip().split(' ')
+              d = {'{CHR}': CHR, '{Ne}': Ne, '{m}': m, '{start}': i, '{stop}': j}
+              string = name
+              for i,j in d.items():
+                string = string.replace(i,str(j))
+              filenames.append(string)
+    return expand(filenames, numiter=numiters, threshold=thresholds, nsamples=nsampless)
+
+  return input_files
+
+rule sample_trees:
+  input:
+    input_func(tree) 
+
+ruleorder: sample_tree > get_bp
+
+rule sample_tree:
+  input:
+    expand(ancmutcoal, end=['.anc','.mut','.dist','.coal'], allow_missing=True)
+  output:
+    tree 
+  params:
+    prefix_in = ancmutcoal.replace('{end}',''),
+    prefix_out = tree.replace('.newick','')
+  threads: 1
+  shell:
+    '''
+    module load gcc/9.2.0
+    {relate}scripts/SampleBranchLengths/SampleBranchLengths.sh \
+                 -i {params.prefix_in} \
+                 --dist {input[2]} \
+                 --coal {input[3]} \
+                 -o {params.prefix_out} \
+                 -m {wildcards.m} \
+                 --format n \
+                 --num_samples {wildcards.nsamples} \
+                 --first_bp {wildcards.start} \
+                 --last_bp {wildcards.stop} \
+                 --seed 1 
+    '''
+# snakemake sample_trees --groups sample_tree=sample_tree --group-components sample_tree=80 --jobs 1
+
+# ------------ shared time matrices and coalescence times -------------
+
+shared_times = tree.replace('.newick','_sts.npy')
+coal_times = tree.replace('.newick','_cts.npy')
+
+rule times:
+  input:
+    input_func(shared_times),
+    input_func(coal_times)
+
+rule time:
+  input:
+    tree
+  output:
+    shared_times,
+    coal_times
+  run:
+    from tsconvert import from_newick
+    from utils import get_shared_times
+    import numpy as np
+
+    stss = []
+    ctss = []
+    with open(input[0], mode='r') as f:
+      next(f) #skip header
+      for line in f: #for each tree sampled at a locus
+
+        # import
+        string = line.split()[4] #extract newick string only (Relate adds some info beforehand)
+        ts = from_newick(string) #convert to tskit "tree sequence" (only one tree)
+        tree = ts.first() #the only tree
+
+        # shared times
+        samples = [int(ts.node(node).metadata['name']) for node in ts.samples()] #get index of each sample in list we gave to relate
+        sample_order = np.argsort(samples) #get indices to put in ascending order
+        ordered_samples = [ts.samples()[i] for i in sample_order] #order samples as in relate
+        sts = get_shared_times(tree, ordered_samples) #get shared times between all pairs of samples, with rows and columns ordered as in relate
+        stss.append(sts)
+
+        #coalescence times
+        cts = sorted([tree.time(i) for i in tree.nodes() if not tree.is_sample(i)]) #coalescence times, in ascending order
+        ctss.append(cts)
+
+    np.save(output[0], np.array(stss))
+    np.save(output[1], np.array(ctss))
+
+# ------------- get locations ---------------------
+
+locations = haploid_sample.replace('.samples','_locations.npy')
+
+rule locations:
+  input:
+    expand(locations, CHR=CHRS)
+
+rule location:
+  input:
+    haploid_sample,
+    metadata
+  output:
+    locations
+  run:
+    import numpy as np
+
+    # get ids in order given to relate
+    ids = []
+    with open(input[0], mode='r') as file:
+      next(file); next(file) #skip header and 0 row
+      for line in file: 
+        ids.append(line.strip().split(' ')[0])
+
+    # get metadata
+    metadata = []
+    with open(input[1],'r') as file:
+      next(file) #skip header
+      for line in file:
+        metadata.append(line.strip().split('\t'))
+    
+    # get accession names in metadata (two slightly different forms in different rows)    
+    accessions = [i[1].strip().replace('_','.').split('.')[0].replace('"','') for i in metadata]
+    accessions2 = [i[3] for i in metadata]
+
+    # for each row of metadata, get index in order we gave to relate 
+    order = []
+    for id in ids:
+      try:
+        ix = accessions.index(id)
+      except:
+        ix = accessions2.index(id)
+      order.append(ix)
+
+    # order locations
+    locations = np.array([list(map(float,[i[7].replace(',','.'),i[6].replace(',','.')])) for i in metadata])[order]
+    np.save(output[0], locations)
+
+# ------------- process shared times ----------
+
+processed_shared_times = shared_times.replace('_sts.npy','_sts_{tCutoff}tCutoff_{end}.npy')
+ends = ['mc-invs','logdets','samples']
+
+rule process_shared_time:
+  input:
+    shared_times
+  output:
+    expand(processed_shared_times, end=ends, allow_missing=True)
+  threads: 1
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    # load times at all trees
+    import numpy as np
+    stss = np.load(input[0])
+    _,n,_ = stss.shape
+    # process trees 
+    from utils import chop_shared_times, center_shared_times
+    stss_inv = []
+    stss_logdet = []
+    smplsss = []
+    tCutoff = wildcards.tCutoff
+    if tCutoff=='None': 
+      tCutoff=None 
+    else:
+      tCutoff=float(tCutoff)
+    for sts in stss:
+      # chop
+      sts_chopped, smpls = chop_shared_times(sts, tCutoff=tCutoff) #shared times and samples of each subtree
+      sts_inv = []
+      sts_logdet = []
+      smplss = []
+      # process subtrees
+      for st,sm in zip(sts_chopped, smpls):
+        stc = center_shared_times(st) #mean center
+        stc_inv = np.linalg.pinv(stc) #invert
+        stc_logdet = np.linalg.slogdet(st)[1] #log determinant
+        sts_inv.append(stc_inv)
+        sts_logdet.append(stc_logdet) 
+        smplss.append(sm) #samples
+      stss_inv.append(sts_inv)
+      stss_logdet.append(sts_logdet)
+      smplsss.append(smplss)
+    # save
+    np.save(output[0], np.array(stss_inv, dtype=object))
+    np.save(output[1], np.array(stss_logdet, dtype=object))
+    np.save(output[2], np.array(smplsss, dtype=object))
+
+# ------------- process coalescence times ----------
+
+processed_coal_times = coal_times.replace('_cts.npy','_cts_{tCutoff}tCutoff_{end}.npy')
+ends = ['bts','lpcs']
+
+rule process_coal_time:
+  input:
+    coal_times,
+    ancmutcoal.replace('{end}','.coal')
+  output:
+    expand(processed_coal_times, end=ends, allow_missing=True)
+  threads: 1 
+  run:
+    import os
+    # taming numpy
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import _log_coal_density
+    # get variable Nee
+    epochs = np.genfromtxt(input[1], skip_header=1, skip_footer=1) #time at which each epoch starts (and the final one ends)
+    Nes = 0.5/np.genfromtxt(input[1], skip_header=2)[2:] #effective population size during each epoch
+    # process coal times
+    ctss = np.load(input[0]) #coalescence times in ascending order, for each tree
+    btss = []
+    lpcs = []
+    tCutoff = wildcards.tCutoff
+    if tCutoff=='None': 
+      tCutoff=None 
+    else:
+      tCutoff=float(tCutoff)
+    for cts in ctss: 
+      # get branching times in ascending order
+      T = cts[-1] #TMRCA (to be replaced with tCutoff)
+      if tCutoff is not None:
+        if tCutoff < T:
+          T = tCutoff
+      bts = T - np.flip(cts) #branching times, in ascending order
+      bts = bts[bts>0] #remove branching times at or before T
+      bts = np.append(bts,T) #append total time as last item
+      btss.append(bts)
+      # get probability of coalescence times under panmictic coalescent with variable Ne
+      lpc = _log_coal_density(times=cts, Nes=Nes, epochs=epochs, tCutoff=tCutoff)
+      lpcs.append(lpc)
+    # save
+    np.save(output[0], np.array(btss, dtype=object))
+    np.save(output[1], np.array(lpcs, dtype=object))
+
+# ------------- composite dispersal rates -------------
+
+composite_dispersal_rate = processed_shared_times.replace('Chr{CHR}.','').replace('_{start}-{stop}bps','').replace('_sts_{tCutoff}tCutoff_{end}','_{tCutoff}tCutoff_mle-dispersal')
+
+rule composite_dispersal_rates:
+  input:
+   expand(composite_dispersal_rate, Ne=Nes, m=ms, numiter=numiters, threshold=thresholds, nsamples=nsampless, tCutoff=tCutoffs) 
+
+def input_func_dispersal(name, ends):
+  def input_files(wildcards):
+    filenames = []
+    for CHR in CHRS:
+      bpfile = checkpoints.get_bp.get(CHR=CHR, **wildcards).output[0]
+      with open(bpfile,'r') as f:
+        for line in f:
+          start,stop = line.strip().split(' ')
+          d = {'{CHR}': CHR, '{start}': start, '{stop}': stop}
+          string = name
+          for i,j in d.items():
+            string = string.replace(i,str(j))
+          filenames.append(string)
+    return expand(filenames, end=ends, allow_missing=True) 
+  return input_files
+
+rule composite_dispersal_rate:
+  input:
+    stss_mc_inv = input_func_dispersal(processed_shared_times, ['mc-invs']),
+    stss_logdet = input_func_dispersal(processed_shared_times, ['logdets']),
+    smplss = input_func_dispersal(processed_shared_times, ['samples']),
+    btss = input_func_dispersal(processed_coal_times, ['bts']),
+    lpcss = input_func_dispersal(processed_coal_times, ['lpcs']),
+    locs = expand(locations, CHR=CHRS, allow_missing=True)[0]
+  output:
+    composite_dispersal_rate
+  threads: 80
+  resources:
+    time = 60 * 24
+  run:
+    import os
+    # taming numpy
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import mle_dispersal, _sds_rho_to_sigma
+    from tqdm import tqdm
+    # load locations
+    locations = np.load(input.locs)
+    # subsample for testing
+    L = len(input.stss_mc_inv)
+    M = float(wildcards.nsamples)
+    #L = 10 #number of loci
+    #M = 10 #number of trees per locus
+    #mean centered and inverted shared time matrices
+    print('\nloading inverted shared times matrices')
+    stss_mc_inv = []
+    for f in tqdm(input.stss_mc_inv[:L]):
+      sts_mc_inv = np.load(f, allow_pickle=True)[:M]
+      stss_mc_inv.append(sts_mc_inv)
+    #log determinants of mean centered shared time matrices    
+    print('\nloading log determinants of shared times matrices')
+    stss_logdet = []
+    for f in tqdm(input.stss_logdet[:L]):
+      sts_logdet = np.load(f, allow_pickle=True)[:M]
+      stss_logdet.append(sts_logdet) 
+    #subtree sampless    
+    print('\nloading samples of shared times matrices')
+    smplss = []
+    for f in tqdm(input.smplss[:L]):
+      smpls = np.load(f, allow_pickle=True)[:M]
+      smplss.append(smpls) 
+    #branching times
+    print('\nloading branching times')
+    btss = []
+    for f in tqdm(input.btss[:L]):
+      bts = np.load(f, allow_pickle=True)[:M] 
+      btss.append(bts)
+    #log probability of coalescent times    
+    print('\nloading log probability of coalescence times')
+    lpcss = []
+    for f in tqdm(input.lpcss[:L]):
+      lpcs = np.load(f, allow_pickle=True)[:M] 
+      lpcss.append(lpcs)
+    # function for updates
+    def callbackF(x):
+    #  print('{0: 3.6f}   {1: 3.6f}   {2: 3.6f}'.format(x[0], x[1], x[2])) #if important=False
+      print('{0: 3.6f}   {1: 3.6f}   {2: 3.6f}   {3: 3.6f}'.format(x[0], x[1], x[2], x[3]))
+    # find parameter estimates
+    print('\nestimating dispersal rate')
+    mle = mle_dispersal(locations=locations, shared_times_inverted=stss_mc_inv, log_det_shared_times=stss_logdet, samples=smplss, 
+                        sigma0=None, phi0=None, #make educated guess based on first tree at each locus
+                        #sigma0=_sds_rho_to_sigma(0.07, 0.06, 0.5), phi0=5e-5, #guess from tCutoff=1e6 mle
+                        callbackF=callbackF, 
+                        important=True, branching_times=btss, logpcoals=lpcss)
+    print('\n',mle)
+    np.save(output[0], mle)
+# these take <12h, except for tCutoff=1e4 which took just over 16h
+# note that i changed some code and touched -- so might require some debugging when running anew (hopefully not)
+
+# ------------- ancestor locations using chopped trees -------------
+
+ancestor_locations = processed_shared_times.replace('_sts','').replace('{end}','anc-locs')
+
+def input_func_locs(name):
+
+  def input_files(wildcards):
+    filenames = []
+    for CHR in CHRS:
+      for Ne in Nes:
+        for m in ms:
+          infile = checkpoints.get_bp.get(CHR=CHR, Ne=Ne, m=m).output[0]
+          with open(infile,'r') as f:
+            for line in f:
+              i,j = line.strip().split(' ')
+              d = {'{CHR}': CHR, '{Ne}': Ne, '{m}': m, '{start}': i, '{stop}': j}
+              string = name
+              for i,j in d.items():
+                string = string.replace(i,str(j))
+              filenames.append(string)
+    return expand(filenames, numiter=numiters, threshold=thresholds, nsamples=nsampless, tCutoff=tCutoffs)
+
+  return input_files
+
+rule locate_ancestors:
+  input:
+    input_func_locs(ancestor_locations)
+
+ruleorder: process_shared_time > locate_ancestor 
+ruleorder: process_coal_time > locate_ancestor 
+
+rule locate_ancestor:
+  input:
+    stss = shared_times,
+    locs = locations,
+    mle = composite_dispersal_rate,
+    btss = processed_coal_times.replace('{end}','bts'),
+    lpcs = processed_coal_times.replace('{end}','lpcs'),
+  output:
+    ancestor_locations 
+  threads: 1 #get seg fault if >1
+  run:
+    import os
+    # taming numpy
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    
+    import numpy as np
+    from spacetrees import _sds_rho_to_sigma, _log_birth_density, locate_ancestors
+    from utils import chop_shared_times
+
+    # sample locations
+    locations = np.load(input.locs)
+    n = len(locations)
+
+    # who and when
+    ancestor_samples = range(n) #which samples to find ancestors of
+    tCutoff = wildcards.tCutoff
+    if tCutoff == 'None':
+      tCutoff = None
+      max_time = 1e6
+    else:
+      tCutoff = float(tCutoff)
+      max_time = tCutoff  
+    ancestor_times = np.logspace(1,np.log10(max_time),10) #times to find ancestors
+
+    # chop trees
+    stss_chopped = []
+    samples = []
+    for sts in np.load(input.stss):
+      sts_chopped, smpls = chop_shared_times(sts, tCutoff=tCutoff) #shared times and sample indices in each subtree
+      stss_chopped.append(sts_chopped)
+      samples.append(smpls)
+    
+    #dispersal rate
+    mle = np.load(input.mle) #mle dispersal rate and branching rate
+    sigma = _sds_rho_to_sigma(mle[0], mle[1], mle[2]) #as covariance matrix
+
+    # importance weights
+    btss = np.load(input.btss, allow_pickle=True) #birth times
+    phi = mle[-1] #mle branching rate
+    lbds = np.array([_log_birth_density(bts, phi, n) for bts in btss]) #log probability densities of birth times
+    lpcs = np.load(input.lpcs, allow_pickle=True) #log probability densities of coalescence times
+    log_weights = lbds - lpcs #log importance weights
+ 
+    # subsample for testing
+    M = float(wildcards.nsamples)
+    #M = 100 #number of trees
+
+    # locate 
+    ancestor_locations = locate_ancestors(ancestor_samples, ancestor_times, 
+                                          stss_chopped[:M], samples[:M], locations, sigma, log_weights[:M])
+    np.save(output[0], ancestor_locations)
+# taking about 16m each with 1 thread
+# snakemake locate_ancestors --profile slurm --groups locate_ancestor=locate --group-components locate=80 --jobs 11
+
+# ------------- ancestor locations using full trees -------------
+
+ancestor_locations_full = processed_shared_times.replace('_sts','').replace('{end}','anc-locs_full-trees')
+
+rule locate_ancestors_full:
+  input:
+    input_func_locs(ancestor_locations_full)
+
+ruleorder: process_shared_time > locate_ancestor_full
+ruleorder: process_coal_time > locate_ancestor_full
+
+rule locate_ancestor_full:
+  input:
+    stss = shared_times,
+    locs = locations,
+    mle = composite_dispersal_rate,
+    btss = processed_coal_times.replace('{end}','bts'),
+    lpcs = processed_coal_times.replace('{end}','lpcs'),
+  output:
+    ancestor_locations_full 
+  threads: 1 #get seg fault if >1
+  run:
+    import os
+    # taming numpy
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    
+    import numpy as np
+    from spacetrees import _sds_rho_to_sigma, _log_birth_density, locate_ancestors
+    from utils import chop_shared_times
+
+    # sample locations
+    locations = np.load(input.locs)
+    n = len(locations)
+
+    # who and when
+    ancestor_samples = range(n) #which samples to find ancestors of
+    tCutoff = wildcards.tCutoff #determines which dispersal rate we use and how far back we locate ancestors
+    if tCutoff == 'None':
+      max_time = 1e6
+    else:
+      max_time = float(tCutoff)  
+    #ancestor_times = np.logspace(1,np.log10(max_time),10) #times to find ancestors
+    ancestor_times = np.linspace(1e3,max_time,10)
+
+    # chop trees
+    stss_chopped = []
+    samples = []
+    for sts in np.load(input.stss):
+      sts_chopped, smpls = chop_shared_times(sts, tCutoff=None) #shared times and sample indices in each subtree (here just 1 subtree per tree)
+      stss_chopped.append(sts_chopped)
+      samples.append(smpls)
+    
+    #dispersal rate
+    mle = np.load(input.mle) #mle dispersal rate and branching rate
+    sigma = _sds_rho_to_sigma(mle[0], mle[1], mle[2]) #as covariance matrix
+
+    # importance weights
+    btss = np.load(input.btss, allow_pickle=True) #birth times
+    phi = mle[-1] #mle branching rate
+    lbds = np.array([_log_birth_density(bts, phi, n) for bts in btss]) #log probability densities of birth times
+    lpcs = np.load(input.lpcs, allow_pickle=True) #log probability densities of coalescence times
+    log_weights = lbds - lpcs #log importance weights
+ 
+    # locate 
+    ancestor_locations = locate_ancestors(ancestor_samples, ancestor_times, 
+                                          stss_chopped, samples, locations, sigma, log_weights)
+    np.save(output[0], ancestor_locations)
+# taking about 16m each with 1 thread
+# snakemake locate_ancestors_full --profile slurm --groups locate_ancestor_full=locate --group-components locate=80 --jobs 11

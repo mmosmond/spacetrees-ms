@@ -1,0 +1,1265 @@
+# snakemake real_ancestor_locations true_composite_dispersal_rates true_ancestor_locations --profile slurm --group-components slim_sims=1 true_trees=1 true_times=10 process_true_times=10 real_ancestor_locations=10 true_composite_dispersal_rates=10 true_ancestor_locations=10 -j10 -n
+# snakemake real_ancestor_locations_inf inf_composite_dispersal_rates inf_ancestor_locations --profile slurm --group-components slim_sims=1 true_trees=1 real_ancestor_locations_inf=80 inf_composite_dispersal_rates=80 inf_ancestor_locations=80 -j10 -n
+#snakemake inf_ancestor_locations --profile slurm --group-components sample_trees=80 inf_times=80 coal_rates=80 composite_dispersal_rate=80 inf_ancestor_locations=80 --jobs 100
+
+#snakemake composite_dispersal_rates --rerun-incomplete --profile slurm --group-components haps_samples=80 anc_muts=80 coal_rates=80 bps=80 sample_trees=80 inf_times=80 process_shared_times=80 process_coal_times=80 --jobs 100
+
+# -------------- python modules ---------------
+
+from tqdm import tqdm
+
+# ------------- paths ------------------
+
+DATADIR = 'data/' #where to put outputs
+PROGRAMDIR = 'programs/' #where to put programs
+
+#  ----------- parameters -----------------
+
+# required for SLiM simulations
+Ls = [int(1e8)] #number of basepairs
+RBPs = [1e-8] #per base pair recombination rate
+LAMBDAs = [2.0] #mean number of offspring per parent when no competition
+Ks = [1.0] #effect of competition on birth (higher values less effect)
+Ws = [100] #width of habitat square
+SIGMAcomps = [1.0] #SD of competition kernel
+SIGMAmates = [0.5] #SD of mate choice kernel
+SIGMAdisps = [0.25,0.5,0.75] #,0.5,1.0,2.0] #SD of dispersal kernal
+SIGMAdisps = [0.75]
+selfings = [0] #fraction of offspring selfed
+MAXTs = [40000] #number of gens to run sim for (aim for 4*W**2*K, the expected time to an MRCA in a panmictic population) 
+retain_gens = range(100,1001,100) #generations (from present) to retain ancestors in
+retain_gens_str = 'c('+','.join(map(str,retain_gens))+')' #reformat in Eidos
+NREPS = 10 #number of reps
+nreps = range(NREPS)
+
+# required for processing trees
+Nes = [10000] #Ne for recapitation, make roughly W**2 * K
+Us = [1e-8] #per base pair mutation rate
+ds = [100] #[10, 100] #max distance from center of habitat to sample
+ks = [25,50,100]
+ks = [100]#[25,50,100]#,100] #number of diploid individuals to sample
+Gs = [2] #number of genomes per individual to sample (number of sample nodes is k*G)
+numiters = [5] #number of mcmc iterations to do when inferring coalescence rates (5 is default)
+thresholds = [0.5] #fraction of trees to drop when inferring coalescence relates (0.5 is default)
+treeskips = [100] #use every TREESKIPth tree for inference
+Ms = [1000] #number of samples of branch lengths at each tree for importance sampling
+tCutoffs = [100,1000,None] #[100] #,None] #when to chop subtrees
+tCutoffs = [None]
+ms = [1,10,100] #number of trees to use at each locus
+ms = [100]
+
+# ------------- snakemake constraints -----------
+wildcard_constraints:
+  treeskip="\d+"
+
+# rules that should not be submitted to jobs on cluster (e.g., short, need internet)
+localrules: get_slim, get_relate, rec_map, poplabel, bp
+
+##################
+#### PROGRAMS ####
+##################
+
+# ------------------- slim ------------------
+
+SLiM = PROGRAMDIR + 'SLiM_build/slim' #command to run SLiM
+
+rule get_slim:
+  input:
+  output:
+    SLiM
+  shell:
+    '''
+    wget https://github.com/MesserLab/SLiM/releases/download/v4.0.1/SLiM.zip -P {PROGRAMDIR}
+    cd {PROGRAMDIR}
+    unzip SLiM.zip
+    rm SLiM.zip
+    module load cmake/3.21.4
+    module load gcc/8.3.0
+    mkdir build
+    cd build
+    cmake ../SLiM
+    make slim
+    cd .. 
+    mv build/ SLiM_build
+    '''
+
+# ---------------------- relate --------------
+
+RELATEDIR = PROGRAMDIR + 'relate' #where relate lives
+RELATE = PROGRAMDIR + 'relate/bin/Relate' #the executable
+
+rule get_relate:
+  input:
+  output:
+    RELATE
+  shell:
+    '''
+    git clone https://github.com/MyersGroup/relate.git
+    cd relate/build
+    module load cmake/3.22.5 gcc/11.3.0 gsl/2.7
+    cmake ..
+    make
+    cd -
+    mv relate/ {PROGRAMDIR}
+    ''' 
+
+#########################
+### SIMULATIONS
+#########################
+
+# ------- SLiM simulations -------
+
+slim_trees = DATADIR + "sim_{L}L_{RBP}RBP_{LAMBDA}LAMBDA_{K}K_{W}W_{SIGMAcomp}SIGMAcomp_{SIGMAmate}SIGMAmate_{SIGMAdisp}SIGMAdisp_{selfing}selfing_{MAXT}MAXT_{nrep}nrep.trees"
+
+rule slim_sim:
+  input:
+    rules.get_slim.output[0],
+    "sim.slim"
+  output:
+    slim_trees
+  group: "slim_sims"	 
+  threads: 80
+  resources:
+    runtime=240,
+  shell:
+    """
+    module load gcc/11.3.0    
+    mkdir -p {DATADIR}
+    {input[0]} \
+      -d L={wildcards.L} \
+      -d RBP={wildcards.RBP} \
+      -d LAMBDA={wildcards.LAMBDA} \
+      -d K={wildcards.K} \
+      -d W={wildcards.W} \
+      -d SIGMAcomp={wildcards.SIGMAcomp} \
+      -d SIGMAmate={wildcards.SIGMAmate} \
+      -d SIGMAdisp={wildcards.SIGMAdisp} \
+      -d selfing={wildcards.selfing} \
+      -d MAXT={wildcards.MAXT} \
+      -d "retain_gens={retain_gens_str}" \
+      -d nrep={wildcards.nrep} \
+      -d "output='{output}'" \
+      {input[1]}
+    """
+
+rule slim_sims:
+  input:
+    expand(slim_trees, L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps)
+
+# snakemake slim_sims --profile slurm --group-components slim_sims=1 --jobs 10 -n
+# each takes about 3h, getting oom (for tskit simplify) when running 10 simultaneously
+
+# ------------------ get true tree-sequences and locations of sample, and make VCF -----------------
+
+true_trees = slim_trees.replace('.trees','_{Ne}Ne_{U}U_{d}d_{k}k_{G}G{end}') #oops, one too many underscores in front of {d}
+ends = ["_locs.txt", ".trees", ".vcf", "_Ne.txt", "_with_anc.trees"]
+
+rule true_tree:
+  input:
+    rules.slim_sim.output[0]
+  output:
+    expand(true_trees, end=ends, allow_missing=True)
+  group: "true_trees"
+  threads: 80
+  resources:
+    runtime=15
+  run:
+    # tame numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    import tskit, pyslim, msprime
+    print('load tree')
+    ts = tskit.load(input[0]) #load tree sequence
+    print('choose samples')
+    inds = np.array([i.id for i in ts.individuals() if ((i.location[0] - float(wildcards.W)/2)**2 + (i.location[1] - float(wildcards.W)/2)**2)**0.5 < float(wildcards.d) and ts.node(i.nodes[0]).time==0]) #potential individuals to sample
+    inds = np.random.choice(inds, int(wildcards.k), replace=False) #select k individuals randomly from potential
+    samples = [ts.individual(ind).nodes[:int(wildcards.G)] for ind in inds] #first G genomes from each individual
+    samples = [node for sample in samples for node in sample] #flatten
+    locs = [ts.individual(ts.node(sample).individual).location[:2] for sample in samples] #2d locations of all sample nodes
+    np.savetxt(output[0], locs) #save sample locations
+    print('simplify')
+    ts = ts.simplify(samples, keep_unary_in_individuals=True, keep_input_roots=True) #keep ancestors to find their true locations, keep input roots for recapping (note that now individual refers to index in inds)
+    ts.dump(output[4])
+    ts = ts.simplify(keep_input_roots=True) #remove unary nodes 
+    print('recapitate')
+    ts = pyslim.recapitate(ts, recombination_rate=float(wildcards.RBP), ancestral_Ne=float(wildcards.Ne)) #recapitate
+    ts.dump(output[1])
+    print('mutate')
+    ts = msprime.sim_mutations(ts, rate=float(wildcards.U)) #layer on mutations
+    print('make vcf')
+    individuals = [ts.individual(ts.node(i).individual).id for i in ts.samples()][::2] #list of individual ids in same order as locations
+    with open(output[2], "w") as vcf_file:
+      ts.write_vcf(vcf_file, individuals = individuals) #give the sampled individuals in the same order as inds/locations
+    twoNe = ts.diversity() / (2 * float(wildcards.U)) #simple estimate of 2Ne
+    np.savetxt(output[3], [int(twoNe)])
+
+# take about 10m each with 1 thread, use about 50% of node memory, so should probably run each on a node with 80 threads
+
+#########################
+### TRUE TREES
+#########################
+
+# ------------------- get shared times and ancestor locations from true trees --------------------
+
+true_times = true_trees.replace('{end}','_{treeskip}treeskip{end}')
+ends = ['_sts.npy','_positions.npy']
+
+rule true_times:
+  input:
+    rules.true_tree.output[1],
+    rules.true_tree.output[4]
+  output:
+    expand(true_times, end=ends, allow_missing=True)
+  group: "true_times"
+  threads: 1 
+  resources:
+    runtime=15
+  run:
+    # tame numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    import tskit
+    from utils import get_shared_times
+    ts = tskit.load(input[0])
+    stss = []
+    ctss = []
+    positions = []
+    print('getting shared times')
+    for i,tree in tqdm(enumerate(ts.trees()), total=ts.num_trees):
+      if i%int(wildcards.treeskip) == 0:
+        sts = get_shared_times(tree, ts.samples()) #get shared times between all pairs of samples
+        stss.append(sts)
+        positions.append(tree.interval[0]) #first bp of tree
+    np.save(output[0], np.array(stss))
+    np.save(output[1], np.array(positions))
+
+# ------------------ process shared times --------------------
+
+processed_true_times = true_times.replace('{end}','_{tCutoff}tCutoff{end}')
+ends = ['.npy','_mc-inv.npy','_samples.npy']
+
+rule process_true_time:
+  input:
+    rules.true_times.output[0]
+  output:
+    expand(processed_true_times, end=ends, allow_missing=True)
+  threads: 1 
+  group: "process_true_times"
+  resources:
+    runtime=15
+  run:
+    # tame numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from utils import chop_shared_times, center_shared_times
+    # load shared times at all loci
+    stss = np.load(input[0])
+    # process 
+    stss_chopped = []
+    stss_inv = []
+    smplss = []
+    tCutoff = wildcards.tCutoff
+    if tCutoff=='None': 
+      tCutoff=None 
+    else:
+      tCutoff=float(tCutoff)
+    for sts in stss:
+      # chop
+      sts_chopped, smpls = chop_shared_times(sts, tCutoff=tCutoff) #shared times and samples of each subtree
+      stss_chopped.append(sts_chopped)
+      smplss.append(smpls)
+      sts_inv = []
+      # process shared times in each subtrees
+      for st in sts_chopped:
+        stc = center_shared_times(st) #mean center
+        stc_inv = np.linalg.inv(stc) #invert
+        sts_inv.append(stc_inv)
+      stss_inv.append(sts_inv)
+    # save
+    np.save(output[0], np.array(stss_chopped, dtype=object))
+    np.save(output[1], np.array(stss_inv, dtype=object))
+    np.save(output[2], np.array(smplss, dtype=object))                    
+
+# ----------- composite dispersal rates ------------------------
+
+true_composite_dispersal_rate = processed_true_times.replace('{end}','_mle-dispersal.npy')
+
+rule true_composite_dispersal_rate:
+  input:
+    rules.process_true_time.output[1:],
+    locs = rules.true_tree.output[0]
+  output:
+    true_composite_dispersal_rate
+  threads: 1
+  group: "true_composite_dispersal_rates"
+  resources:
+    runtime=15
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import mle_dispersal, _sds_rho_to_sigma
+    # load locations
+    locations = np.loadtxt(input.locs) #sample node locations
+    #mean centered and inverted shared time matrices
+    stss_mc_inv = np.load(input[0], allow_pickle=True)
+    stss_mc_inv = np.expand_dims(stss_mc_inv, axis=1)
+    #subtree samples
+    smplss = np.load(input[1], allow_pickle=True)
+    smplss = np.expand_dims(smplss, axis=1)
+    # function for updates
+    def callbackF(x):
+      print('{0: 3.6f}   {1: 3.6f}   {2: 3.6f}'.format(x[0], x[1], x[2]))
+    # find parameter estimates
+    mle = mle_dispersal(locations=locations, shared_times_inverted=stss_mc_inv, samples=smplss, 
+                        callbackF=callbackF,
+                        important=False, BLUP=True) #with only 1 tree per locus BLUP=MLE
+    print('\n',mle)
+    np.save(output[0], mle) 
+
+rule true_composite_dispersal_rates:
+  input:
+    expand(true_composite_dispersal_rate, L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, treeskip=treeskips, tCutoff=tCutoffs)
+
+# snakemake true_composite_dispersal_rates --profile slurm --group-components true_composite_dispersal_rates=10 -j1 -n
+# about 1m each
+
+# ----------- ancestor locations ------------------------
+
+true_ancestor_location = processed_true_times
+ends = ['_ancestor-locations.npy', '_ancestor-variances.npy']
+
+rule true_ancestor_location:
+  input:
+    rules.process_true_time.output[0],
+    rules.process_true_time.output[2],
+    locs = rules.true_tree.output[0]
+  output:
+    expand(true_ancestor_location, end=ends, allow_missing=True)
+  threads: 1
+  group: "true_ancestor_locations"
+  resources:
+    runtime=60
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import locate_ancestors 
+    # load locations
+    locations = np.loadtxt(input.locs) #sample node locations
+    # load shared times at each locus and subtree
+    stss_chopped = np.load(input[0], allow_pickle=True)
+    stss_chopped = np.expand_dims(stss_chopped, axis=1) #adding dimension for number of trees per locus (here 1)
+    # samples in each subtree
+    smplss = np.load(input[1], allow_pickle=True)
+    smplss = np.expand_dims(smplss, axis=1)
+    # locate at each locus
+    all_anc_locs = []
+    all_anc_vars = []
+    ancestor_samples = range(int(wildcards.k)*int(wildcards.G))
+    ancestor_samples = range(10) #just the first 10 for speed
+    L = len(smplss)
+    for sts, smpls in tqdm(zip(stss_chopped, smplss), total=L):
+        anc_locs, anc_vars = locate_ancestors(ancestor_samples=ancestor_samples, ancestor_times=retain_gens, 
+                                              shared_times_chopped=sts, samples=smpls, locations=locations, 
+                                              BLUP=True, BLUP_var=True) 
+        all_anc_locs.append(anc_locs)
+        all_anc_vars.append(anc_vars)
+    np.save(output[0], all_anc_locs) 
+    np.save(output[1], all_anc_vars) 
+
+rule true_ancestor_locations:
+  input:
+    expand(true_ancestor_location, L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, treeskip=treeskips, tCutoff=tCutoffs, end=ends)
+
+# snakemake true_ancestor_locations --profile slurm --group-components true_times=10 process_true_times=10 true_ancestor_locations=10 --jobs 1 -n
+# looks to take just over 30m with 1 or 40 threads, very little memory
+
+# ------------------- real ancestor locations --------------------
+
+real_ancestor_location = true_times.replace('{end}','_anc-locs.npy')
+
+rule real_ancestor_location:
+  input:
+    rules.true_times.output[1],
+    rules.true_tree.output[-1]
+  output:
+    real_ancestor_location
+  group: "real_ancestor_locations"
+  threads: 8
+  resources:
+   runtime=15
+  run:
+    # tame numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    import tskit
+    # function to get locations of ancestors from a tree at a given time
+    def true_locations(ts, tree, nodes, time):
+      locs = np.empty((len(nodes),2))
+      for i in tree.nodes():
+        if ts.node(i).time==time:
+          for leaf in tree.leaves(i):
+            if leaf in nodes:
+              locs[leaf] = ts.individual(ts.node(i).individual).location[:2]
+      return locs
+    # loop over trees and times
+    positions = np.load(input[0]) #bps to get ancestors at (since the ancestor ts has different trees)
+    ts = tskit.load(input[1])
+    all_locs = []
+    ix = 0
+    nodes = range(int(wildcards.k) * int(wildcards.G)) #which samples to locate ancestors of
+    print('getting ancestor locations')
+    for i,tree in tqdm(enumerate(ts.trees()), total=ts.num_trees):
+      if tree.interval[1] > positions[ix]:
+        locss = [true_locations(ts,tree,nodes,0)] #start with sample locations
+        for time in retain_gens:
+          locs = true_locations(ts, tree, nodes, time)
+          locss.append(locs)
+        all_locs.append(locss)
+        ix += 1
+        if ix >= len(positions):
+          break #stop after last tree
+    # arrange: loci, samples, times
+    all_locs = np.array(all_locs).swapaxes(1,2)
+    np.save(output[0], all_locs)
+
+rule real_ancestor_locations:
+  input:
+    expand(real_ancestor_location, L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, treeskip=treeskips)
+
+# snakemake real_ancestor_locations --profile slurm --group-components real_ancestor_locations=10 --jobs 1 -n
+# about a minute each with 1 thread
+
+#########################
+### INFERRED TREES
+#########################
+
+# ------------------- convert vcf to haps/sample ----------------------
+
+haps_sample = true_trees
+ends = ['.haps','.sample']
+
+rule haps_sample:
+  input:
+    rules.true_tree.output[2],
+    rules.get_relate.output[0] 
+  output:
+   expand(haps_sample, end=ends, allow_missing=True)
+  params:
+    prefix = true_trees.replace('{end}','')
+  group: "haps_samples"
+  threads: 1
+  resources:
+    runtime=15
+  shell:
+    '''
+    module load gcc/11.3.0 #needed for relate
+    {RELATEDIR}/bin/RelateFileFormats \
+                 --mode ConvertFromVcf \
+                 --haps {output[0]} \
+                 --sample {output[1]} \
+                 -i {params.prefix} \
+                 --chr 1
+    '''   
+
+# --------------- recombination map ---------
+
+rec_map = DATADIR + 'sim_{L}L_{RBP}RBP_{selfing}selfing.map'
+
+rule rec_map:
+  input:
+  output:
+    rec_map
+  threads: 1
+  group: "rec_maps"
+  run:
+    import numpy as np
+    L = int(wildcards.L)
+    R = (1 - (1 - 2 * float(wildcards.RBP))**L)/2 #recombination distance from one end of chromosome to other
+    cm = 50 * np.log(1/(1-2*R)) * (1-float(wildcards.selfing)) #length in centiMorgans, multiplied by outcrossing rate (effective length)
+    cr = cm/L * 1e6 * (1-float(wildcards.selfing)) #effective cM per million bases
+    script = "pos COMBINED_rate Genetic_Map \n0 %f 0 \n%d %f %f" %(cr, L, cr, cm)
+    os.system("echo '" + script + "' >"  + output[0])
+
+# --------------- haps to anc/mut ----------------
+
+anc_mut = haps_sample
+ends = ['.anc','.mut'] 
+
+rule anc_mut:
+  input:
+    rules.true_tree.output[3],
+    rules.haps_sample.output,
+    rules.rec_map.output[0],
+    rules.get_relate.output[0]
+  output:
+    expand(anc_mut, end=ends, allow_missing=True)
+  threads: 1
+  group: "anc_muts"
+  resources:
+    runtime=15
+  params:
+    prefix = anc_mut.replace(DATADIR,'').replace('{end}',''),
+  shell:
+    '''
+    twoNe=( $(cat {input[0]}) )
+    module load gcc/11.3.0 #needed for relate
+    {RELATEDIR}/bin/Relate \
+      --mode All \
+      -m {wildcards.U} \
+      -N $twoNe \
+      --haps {input[1]} \
+      --sample {input[2]} \
+      --map {input[3]} \
+      --seed 1 \
+      -o {params.prefix}
+    mv {params.prefix}.* {DATADIR} 
+    '''
+
+# ------------- poplabels ------------
+
+poplabel = DATADIR + 'sim_{k}k.poplabels'
+
+rule poplabel:
+  input:
+  output:
+    poplabel
+  threads: 1
+  group: "poplabels"
+  shell:
+    '''
+    echo "sample population group sex" > {output[0]}
+    for i in {{1..{wildcards.k}}}; do echo "$i 1 1 NA" >> {output[0]}; done
+    '''
+
+# ------------- coalescence rates ---------
+# note that I commented out the last line in Relate's EstimatePopulationSize.sh to avoid loading R to plot 
+
+coal_rate = anc_mut.replace('{end}','_{numiter}numiter_{threshold}threshold{end}')
+ends = ['.anc','.mut','.coal']
+
+rule coal_rate:
+  input:
+    rules.anc_mut.output,
+    rules.poplabel.output[0]
+  output:
+    expand(coal_rate, end=ends, allow_missing=True)
+  threads: 1
+  group: "coal_rates" 
+  resources:
+    runtime=180
+  params:
+    prefix = anc_mut.replace('{end}',''),
+    prefix_out = coal_rate.replace('{end}','')
+  shell:
+    '''
+    module load gcc/11.3.0 #needed for relate
+    # edited relate script to supress plotting
+    {RELATEDIR}/scripts/EstimatePopulationSize/EstimatePopulationSize.sh \
+              -i {params.prefix} \
+              -m {wildcards.U} \
+              --years_per_gen 1 \
+              --poplabels {input[2]} \
+              --seed 1 \
+              --num_iter {wildcards.numiter} \
+              --threshold {wildcards.threshold} \
+              -o {params.prefix_out} 
+    '''
+
+# ------------ decide which trees to sample ----------------
+
+bps = anc_mut.replace('{end}','_{treeskip}treeskip_bps.txt')
+
+#checkpoint bp:
+rule bp:
+  input:
+    rules.anc_mut.output
+  output:
+    bps 
+  threads: 1
+  group: "bps"
+  run:
+    print('getting tree indices')
+    ixs_start=[]
+    ixs_end=[]
+    with open(input[0], "r") as f:
+      for i, line in enumerate(f): #each line is a tree, see https://myersgroup.github.io/relate/getting_started.html#Output
+        if i==1: 
+          n = int(line.split()[1]) #number of trees on this chromosome
+          trees = [i for i in range(0,n+1,int(wildcards.treeskip))] #which trees to sample
+        if i > 1 and i-2 in trees:
+          ixs_start.append(int(line.split(':')[0])) #index of first snp in sampled tree
+        if i > 2 and i-3 in trees: 
+          ixs_end.append(int(line.split(':')[0])-1) #index of last snp in sampled tree
+    print('choose',len(ixs_start),'trees')
+    print('getting start and stop basepairs')
+    bps_start = []
+    bps_end = []
+    with open(input[1],"r") as f:
+      for i,line in enumerate(f):
+        if i>0 and int(line.split(';')[0]) in ixs_start:
+          bps_start.append(int(line.split(';')[1])) #position of first snp in sampled tree
+        if i>0 and int(line.split(';')[0]) in ixs_end:
+          bps_end.append(int(line.split(';')[1])) #position of last snp in sampled tree
+    print('writing to file')
+    with open(output[0], 'w') as out:
+      for start,end in zip(bps_start,bps_end):
+        out.write(str(start) + ' ' + str(end) + '\n')
+
+rule bps:
+  input:
+    expand(bps, L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, numiter=numiters, threshold=thresholds, treeskip=treeskips)
+
+# function to get input files for all loci
+#def input_func(name,ends):
+#  def input_files(wildcards):
+#    filenames = []
+#    infile = checkpoints.bp.get(**wildcards).output[0]
+#    with open(infile,'r') as f:
+#      for i,_ in enumerate(f):
+#        string = name.replace('{locus}',str(i+1))
+#        filenames.append(string)
+#    return expand(filenames, end=ends, **wildcards)
+#  return input_files
+
+# while we can run much of the below in parallel across loci, there were so many jobs that snakemake was painfully slow, so now running all loci together sequentially while parallelizing over replicates and parameter values
+
+# ------------ sample branch lengths at a particular location -------------
+
+#tree_samples = coal_rate.replace('{end}','_{treeskip}treeskip_{locus}locus_{M}M.newick')
+tree_samples = coal_rate.replace('{end}','_{treeskip}treeskip_{M}M.newick')
+
+rule sample_tree:
+  input:
+    rules.bp.output,
+    rules.coal_rate.output
+  output:
+    tree_samples
+  params:
+    prefix_in = coal_rate.replace('{end}',''),
+    prefix_out = tree_samples.replace('.newick','_temp')
+  threads: 1
+  group: "sample_trees"
+  resources:
+    runtime=180
+  shell:
+    '''
+    module load gcc/11.3.0 #for relate
+    while read start stop; do
+      {RELATEDIR}/scripts/SampleBranchLengths/SampleBranchLengths.sh \
+               -i {params.prefix_in} \
+               --coal {input[3]} \
+               -o {params.prefix_out} \
+               -m {wildcards.U} \
+               --format n \
+               --num_samples {wildcards.M} \
+               --first_bp $start \
+               --last_bp  $stop \
+               --seed 1 
+      tail -n +2 {params.prefix_out}.newick | cat >> {output[0]} 
+      rm {params.prefix_out}.newick
+    done < {input[0]}
+    '''
+    #start=( $(awk 'FNR == {wildcards.locus} {{print $1}}' {input[0]}) )
+    #stop=( $(awk 'FNR == {wildcards.locus} {{print $2}}' {input[0]}) )
+
+# --------------- get shared and coalescence times from inferred trees --------------------
+# using a lot of memory -- should have this writing out tree by tree instead 
+
+inf_times = tree_samples.replace('.newick','{end}')
+ends = ['_sts.npy','_cts.npy']
+
+rule inf_time:
+  input:
+    rules.sample_tree.output[0]
+  output:
+    expand(inf_times, end=ends, allow_missing=True)
+  threads: 1
+  group: "inf_times"
+  resources:
+    runtime=360
+  run:
+    # tame numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from npy_append_array import NpyAppendArray
+    from tsconvert import from_newick
+    from utils import get_shared_times
+    with open(input[0], mode='r') as f:
+      with NpyAppendArray(output[0], delete_if_exists=True) as stss:
+        with NpyAppendArray(output[1], delete_if_exists=True) as ctss:
+          #next(f) #skip header
+          for line in tqdm(f): #for each tree sampled
+            string = line.split()[4] #extract newick string only (Relate adds some info beforehand)
+            ts = from_newick(string, min_edge_length=1e-6) #convert to tskit "tree sequence" (only one tree)
+            tree = ts.first() #the only tree
+            samples = [int(ts.node(node).metadata['name']) for node in ts.samples()] #get index of each sample in list we gave to relate
+            sample_order = np.argsort(samples) #get indices to put in ascending order
+            ordered_samples = [ts.samples()[i] for i in sample_order] #order samples as in relate
+            sts = get_shared_times(tree, ordered_samples) #get shared times between all pairs of samples, with rows and columns ordered as in relate
+            stss.append(np.array([sts]))
+            cts = sorted([tree.time(i) for i in tree.nodes() if not tree.is_sample(i)]) #coalescence times, in ascending order
+            ctss.append(np.array([cts]))
+
+# ------------------ process shared times --------------------
+#these take ~15% of mem of node each, as saving up numpy object array until end
+
+processed_shared_times = inf_times.replace('{end}','_{tCutoff}tCutoff{end}')
+ends = ['.npy','_mc-invs.npy','_logdets.npy','_samples.npy']
+
+rule process_shared_time:
+  input:
+    rules.inf_time.output[0]
+  output:
+    expand(processed_shared_times, end=ends, allow_missing=True)
+  threads: 80
+  group: "shared_times"
+  resources:
+    runtime=120
+  run:
+    # tame numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from npy_append_array import NpyAppendArray
+    from utils import chop_shared_times, center_shared_times
+    # load times at all loci and trees
+    stss = np.load(input[0], mmap_mode='r')
+    # process trees
+    tCutoff = wildcards.tCutoff
+    if tCutoff=='None': 
+      tCutoff=None 
+    else:
+      tCutoff=float(tCutoff)
+    stss_chopped = []
+    stss_inv = []
+    stss_logdet = []
+    smplsss = []
+    for sts in tqdm(stss): 
+      # chop
+      sts_chopped, smpls = chop_shared_times(sts, tCutoff=tCutoff) #shared times and samples of each subtree
+      stss_chopped.append(sts_chopped)
+      sts_inv = []
+      sts_logdet = []
+      smplss = []
+      # process subtrees
+      for st,sm in zip(sts_chopped, smpls):
+        stc = center_shared_times(st) #mean center
+        stc_inv = np.linalg.inv(stc) #invert
+        stc_logdet = np.linalg.slogdet(stc)[1] #log determinant
+        sts_inv.append(stc_inv)
+        sts_logdet.append(stc_logdet) 
+        smplss.append(sm) #samples
+      stss_inv.append(sts_inv)
+      stss_logdet.append(sts_logdet)
+      smplsss.append(smplss)
+    #save
+    np.save(output[0], np.array(stss_chopped, dtype=object))
+    np.save(output[1], np.array(stss_inv, dtype=object))
+    np.save(output[2], np.array(stss_logdet, dtype=object))
+    np.save(output[3], np.array(smplsss, dtype=object)) 
+
+# ------------- process coalescence times ----------
+
+processed_coal_times = inf_times.replace('{end}','_{tCutoff}tCutoff{end}')
+ends = ['_bts.npy','_lpcs.npy']
+
+rule process_coal_time:
+  input:
+    rules.inf_time.output[1],
+    rules.coal_rate.output[2]
+  output:
+    expand(processed_coal_times, end=ends, allow_missing=True)
+  threads: 1 
+  group: "coal_times"
+  resources:
+    runtime=15
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import _log_coal_density
+    # get variable Ne
+    epochs = np.genfromtxt(input[1], skip_header=1, skip_footer=1) #time at which each epoch starts (and the final one ends)
+    Nes = 0.5/np.genfromtxt(input[1], skip_header=2)[2:] #effective population size during each epoch
+    # process coal times
+    ctss = np.load(input[0]) #coalescence times in ascending order, for each tree
+    tCutoff = wildcards.tCutoff
+    if tCutoff=='None': 
+      tCutoff=None 
+    else:
+      tCutoff=float(tCutoff)
+    btss = []
+    lpss = []
+    for cts in tqdm(ctss): #over trees
+      # get branching times in ascending order
+      T = cts[-1] #TMRCA (to be replaced with tCutoff)
+      if tCutoff is not None:
+        if tCutoff < T:
+          T = tCutoff
+      bts = T - np.flip(cts) #branching times, in ascending order
+      bts = bts[bts>0] #remove branching times at or before T
+      bts = np.append(bts,T) #append total time as last item
+      btss.append(bts)
+      # get probability of coalescence times under panmictic coalescent with variable Ne
+      lps = _log_coal_density(times=cts, Nes=Nes, epochs=epochs, tCutoff=tCutoff)
+      lpss.append(lps)
+    # save
+    np.save(output[0], np.array(btss, dtype=object))
+    np.save(output[1], np.array(lpss, dtype=object))      
+
+# ----------- blup dispersal rates ------------------------
+
+blup_dispersal_rate = processed_shared_times.replace('{end}','_{m}m_blup-dispersal.npy')
+
+rule blup_dispersal_rate:
+  input:
+    stss_mc_inv = rules.process_shared_time.output[1],
+    smplss = rules.process_shared_time.output[3],
+    locs = rules.true_tree.output[0]
+  output:
+    blup_dispersal_rate
+  threads: 80
+  group: "blup_dispersal_rates"
+  resources:
+    runtime=15
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import mle_dispersal, _sds_rho_to_sigma
+    # load locations
+    locations = np.loadtxt(input.locs) #sample node locations
+    #mean centered and inverted shared time matrices
+    stss_mc_inv = np.load(input.stss_mc_inv, allow_pickle=True)
+    #subtree samples
+    smplss = np.load(input.smplss, allow_pickle=True)
+    # structure data by locus, tree, subtree
+    M = int(wildcards.M)
+    if wildcards.tCutoff == 'None':
+      LM,_,n,n = stss_mc_inv.shape
+      L = int(LM/M)
+      stss_mc_inv = stss_mc_inv.reshape(L,M,1,n,n)
+      smplss = smplss.reshape(L,M,1,n+1)
+    else:
+      LM = stss_mc_inv.shape[0]
+      L = int(LM/M)
+      stss_mc_inv = stss_mc_inv.reshape(L,M)
+      smplss = smplss.reshape(L,M)
+    # find parameter estimates
+    m  = int(wildcards.m) #use the first m trees at each locus
+    blup = mle_dispersal(locations=locations, shared_times_inverted=stss_mc_inv[:,:m], samples=smplss[:,:m], 
+                        BLUP=True)
+    np.save(output[0], blup) 
+
+rule blup_dispersal_rates:
+  input:
+    expand(blup_dispersal_rate, L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, numiter=numiters, threshold=thresholds, treeskip=treeskips, M=Ms, tCutoff=tCutoffs, m=ms)
+
+# ----------- composite dispersal rates ------------------------
+
+composite_dispersal_rate = processed_shared_times.replace('{end}','_{m}m_mle-dispersal.npy')
+
+rule composite_dispersal_rate:
+  input:
+#    stss_mc_inv = input_func(processed_shared_times, ['_mc-invs.npy']),
+#    stss_logdet = input_func(processed_shared_times, ['_logdets.npy']),
+#    smplss = input_func(processed_shared_times, ['_samples.npy']),
+#    btss = input_func(processed_coal_times, ['bts.npy']),
+#    lpcss = input_func(processed_coal_times, ['lpcs.npy']),
+#    locs = rules.true_tree.output[0]
+    stss_mc_inv = rules.process_shared_time.output[1],
+    stss_logdet = rules.process_shared_time.output[2],
+    smplss = rules.process_shared_time.output[3],
+    btss = rules.process_coal_time.output[0],
+    lpcss = rules.process_coal_time.output[1],
+    locs = rules.true_tree.output[0]
+  output:
+    composite_dispersal_rate
+  threads: 80
+  group: "composite_dispersal_rates"
+  resources:
+    runtime=12*60
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import mle_dispersal, _sds_rho_to_sigma
+    from tqdm import tqdm
+    # load locations
+    locations = np.loadtxt(input.locs) #sample node locations
+    #mean centered and inverted shared time matrices
+    stss_mc_inv = np.load(input.stss_mc_inv, allow_pickle=True)
+    #subtree samples
+    smplss = np.load(input.smplss, allow_pickle=True)
+    #log determinants of mean centered shared time matrices   
+    stss_logdet = np.load(input.stss_logdet, allow_pickle=True)
+    #subtree samples
+    smplss = np.load(input.smplss, allow_pickle=True)
+    #branching times
+    btss = np.load(input.btss, allow_pickle=True)
+    #log probability of coalescent times   
+    lpcss = np.load(input.lpcss, allow_pickle=True)
+    # structure data by locus, tree, subtree
+    M = int(wildcards.M)
+    m  = int(wildcards.m) #use the first m trees at each locus
+    if wildcards.tCutoff == 'None':
+      LM,_,n,n = stss_mc_inv.shape
+      L = int(LM/M)
+      stss_mc_inv = stss_mc_inv.reshape(L,M,1,n,n)[:,:m]
+      smplss = smplss.reshape(L,M,1,n+1)[:,:m]
+      stss_logdet = stss_logdet.reshape(L,M,1)[:,:m] 
+      btss = btss.reshape(L,M,n)[:,:m] 
+      lpcss = lpcss.reshape(L,M)[:,:m] 
+    else:
+      LM = stss_mc_inv.shape[0]
+      L = int(LM/M)
+      stss_mc_inv = stss_mc_inv.reshape(L,M)[:,:m]
+      smplss = smplss.reshape(L,M)[:,:m]
+      stss_logdet = stss_logdet.reshape(L,M)[:,:m] 
+      btss = btss.reshape(L,M)[:,:m] 
+      lpcss = lpcss.reshape(L,M)[:,:m] 
+    # function for updates
+    def callbackF(x):
+      print('{0: 3.6f}   {1: 3.6f}   {2: 3.6f}   {3: 3.6f}'.format(x[0], x[1], x[2], x[3]))
+    # find parameter estimates
+    mle = mle_dispersal(locations=locations, shared_times_inverted=stss_mc_inv, log_det_shared_times=stss_logdet, samples=smplss, 
+                        sigma0=None, phi0=None, #make educated guess based on first tree at each locus
+                        callbackF=callbackF,
+                        important=True, branching_times=btss, logpcoals=lpcss)
+    np.save(output[0], mle) 
+
+rule composite_dispersal_rates:
+  input:
+    expand(composite_dispersal_rate, L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, numiter=numiters, threshold=thresholds, treeskip=treeskips, M=Ms, tCutoff=tCutoffs, m=[1000])
+
+# 50% took <6h, all but one <12h
+#m=1 takes <5m
+#m=10 takes <15m
+#m=100 takes <60m
+
+# ----------- ancestor locations ------------------------
+
+inf_ancestor_location = processed_shared_times.replace('{end}','_{m}m_ancestor-locations_{sample}sample.npy')
+
+rule inf_ancestor_location:
+  input:
+#    locs = rules.true_tree.output[0],
+#    stss = rules.process_shared_time.output[0],
+#    smplss = rules.process_shared_time.output[3],
+#    btss = rules.process_coal_time.output[0],
+#    mle = rules.composite_dispersal_rate.output[0],
+#    lpcss = rules.process_coal_time.output[1],
+    stss = rules.process_shared_time.output[0],
+    smplss = rules.process_shared_time.output[3],
+    btss = rules.process_coal_time.output[0],
+    lpcss = rules.process_coal_time.output[1],
+    locs = rules.true_tree.output[0],
+    mle = rules.composite_dispersal_rate.output[0]
+  output:
+    inf_ancestor_location
+  threads: 80 #silly that i load all loci at once
+  group: "inf_ancestor_locations"
+  resources:
+    runtime=30 #120 for 1000M
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from npy_append_array import NpyAppendArray
+    from spacetrees import _sds_rho_to_sigma, _log_birth_density, locate_ancestors 
+    from tqdm import tqdm 
+    # load locations
+    locations = np.loadtxt(input.locs) #sample node locations
+    # load shared times at each locus, tree, and subtree
+    stsss = np.load(input.stss, allow_pickle=True)
+    # samples in each subtree
+    smplsss = np.load(input.smplss, allow_pickle=True)
+    # dispersal and branching rate
+    mle = np.load(input.mle)
+    sigma = _sds_rho_to_sigma(mle[:-1]) #as covariance matrix
+    phi = mle[-1] #mle branching rate
+    # log weight
+    btsss = np.load(input.btss, allow_pickle=True) #birth times for each locus and tree
+    lpcsss = np.load(input.lpcss, allow_pickle=True) #log probability of coalescence times
+    # who and when to locate
+    #ancestor_samples = range(int(wildcards.k)*int(wildcards.G)) #all samples
+    ancestor_samples = [int(wildcards.sample)]
+    try:
+      ancestor_times = [i for i in retain_gens if i<=int(wildcards.tCutoff)] #all times where we have real locations less than cutoff
+    except:
+      ancestor_times = retain_gens
+    # structure data by locus, tree, subtree
+    M = int(wildcards.M)
+    m  = int(wildcards.m) #use the first m trees at each locus
+    if wildcards.tCutoff == 'None':
+      LM,_,n,n = stsss.shape
+      L = int(LM/M)
+      stsss = stsss.reshape(L,M,1,n,n)[:,:m]
+      smplsss = smplsss.reshape(L,M,1,n)[:,:m]
+      btsss = btsss.reshape(L,M,n-1)[:,:m]
+      lpcsss = lpcsss.reshape(L,M)[:,:m] 
+    else:
+      LM = stsss.shape[0]
+      L = int(LM/M)
+      stsss = stsss.reshape(L,M)[:,:m]
+      smplsss = smplsss.reshape(L,M)[:,:m]
+      btsss = btsss.reshape(L,M)[:,:m] 
+      lpcsss = lpcsss.reshape(L,M)[:,:m] 
+    # locate at each locus
+    with NpyAppendArray(output[0], delete_if_exists=True) as anc_locss:
+      for stss, smplss, btss, lpcss in tqdm(zip(stsss,smplsss,btsss,lpcsss), total=L): 
+        lbds = np.array([_log_birth_density(bts, phi, len(locations)) for bts in btss]) #log probability densities of birth times
+        log_weights = lbds - lpcss
+        anc_locs = locate_ancestors(ancestor_samples=ancestor_samples, ancestor_times=ancestor_times, 
+                                    shared_times_chopped=stss, samples=smplss, locations=locations,
+                                    sigma=sigma, log_weights=log_weights)
+        anc_locss.append(anc_locs) 
+
+rule inf_ancestor_locations:
+  input:
+    expand(inf_ancestor_location,  L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=[0.75], selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, numiter=numiters, threshold=thresholds, treeskip=treeskips, M=Ms, tCutoff=[None], sample=range(10), m=ms)
+
+#dummy = inf_ancestor_location.replace('_{locus}locus','').replace('.npy','_dummy.txt')
+#
+#SIGMAdisps = [0.5]
+#tCutoffs = [None]
+#nreps = range(1)
+#rule inf_ancestor_locations:
+#  input:
+#    expand(dummy,  L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, numiter=numiters, threshold=thresholds, treeskip=treeskips, M=Ms, tCutoff=tCutoffs)
+#
+#rule dummy:
+#  input:
+#    input_func(inf_ancestor_location, ['_ancestor-locations.npy'])
+#  output:
+#    dummy
+#  shell:
+#    ''' 
+#    echo "hurray" > {output[0]}
+#    '''
+
+# ----------- blup ancestor locations ------------------------
+
+blup_inf_ancestor_location = processed_shared_times.replace('{end}','_{m}m_ancestor-locations_{sample}sample{end}')
+ends = ['_blup.npy','_blup-var.npy']
+
+rule blup_inf_ancestor_location:
+  input:
+#    locs = rules.true_tree.output[0],
+#    stss = rules.process_shared_time.output[0],
+#    smplss = rules.process_shared_time.output[3],
+#    btss = rules.process_coal_time.output[0],
+#    mle = rules.composite_dispersal_rate.output[0],
+#    lpcss = rules.process_coal_time.output[1],
+    stss = rules.process_shared_time.output[0],
+    smplss = rules.process_shared_time.output[3],
+    btss = rules.process_coal_time.output[0],
+    lpcss = rules.process_coal_time.output[1],
+    locs = rules.true_tree.output[0],
+    mle = rules.composite_dispersal_rate.output[0]
+  output:
+    expand(blup_inf_ancestor_location, end=ends, allow_missing=True)
+  threads: 80
+  group: "blup_inf_ancestor_locations"
+  resources:
+    runtime=2*60
+  run:
+    # taming numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    from spacetrees import _sds_rho_to_sigma, _log_birth_density, locate_ancestors 
+    from tqdm import tqdm 
+    # load locations
+    locations = np.loadtxt(input.locs) #sample node locations
+    # load shared times at each locus, tree, and subtree
+    stsss = np.load(input.stss, allow_pickle=True)
+    # samples in each subtree
+    smplsss = np.load(input.smplss, allow_pickle=True)
+    # dispersal and branching rate
+    mle = np.load(input.mle)
+    sigma = _sds_rho_to_sigma(mle[:-1]) #as covariance matrix
+    phi = mle[-1] #mle branching rate
+    # log weight
+    btsss = np.load(input.btss, allow_pickle=True) #birth times for each locus and tree
+    lpcsss = np.load(input.lpcss, allow_pickle=True) #log probability of coalescence times
+    # who and when to locate
+    #ancestor_samples = range(int(wildcards.k)*int(wildcards.G)) #all samples
+    ancestor_samples = [int(wildcards.sample)]
+    try:
+      ancestor_times = [i for i in retain_gens if i<=int(wildcards.tCutoff)] #all times where we have real locations less than cutoff
+    except:
+      ancestor_times = retain_gens
+    # structure data by locus, tree, subtree
+    M = int(wildcards.M)
+    m  = int(wildcards.m) #use the first m trees at each locus
+    if wildcards.tCutoff == 'None':
+      LM,_,n,n = stsss.shape
+      L = int(LM/M)
+      stsss = stsss.reshape(L,M,1,n,n)[:,:m]
+      smplsss = smplsss.reshape(L,M,1,n)[:,:m]
+      btsss = btsss.reshape(L,M,n-1)[:,:m]
+      lpcsss = lpcsss.reshape(L,M)[:,:m] 
+    else:
+      LM = stsss.shape[0]
+      L = int(LM/M)
+      stsss = stsss.reshape(L,M)[:,:m]
+      smplsss = smplsss.reshape(L,M)[:,:m]
+      btsss = btsss.reshape(L,M)[:,:m] 
+      lpcsss = lpcsss.reshape(L,M)[:,:m] 
+    # locate at each locus
+    anc_locss = []
+    anc_varss = []
+    for stss, smplss, btss, lpcss in tqdm(zip(stsss,smplsss,btsss,lpcsss), total=L): 
+      lbds = np.array([_log_birth_density(bts, phi, len(locations)) for bts in btss]) #log probability densities of birth times
+      log_weights = lbds - lpcss
+      anc_locs, anc_vars = locate_ancestors(ancestor_samples=ancestor_samples, ancestor_times=ancestor_times, 
+                                  shared_times_chopped=stss, samples=smplss, locations=locations,
+                                  log_weights=log_weights, 
+                                  BLUP=True, BLUP_var=True)
+      anc_locss.append(anc_locs)
+      anc_varss.append(anc_vars)
+    np.save(output[0], anc_locss) 
+    np.save(output[1], anc_varss) 
+
+rule blup_inf_ancestor_locations:
+  input:
+    expand(blup_inf_ancestor_location,  L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=[0.75], selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, numiter=numiters, threshold=thresholds, treeskip=treeskips, M=Ms, tCutoff=[None], sample=range(10), end=ends, m=[1000])
+
+# ------------------- real ancestor locations --------------------
+
+real_ancestor_location_inf = bps.replace('_bps.txt','_anc-locs-inf.npy')
+
+rule real_ancestor_location_inf:
+  input:
+    rules.bp.output,
+    rules.true_tree.output[-1]
+  output:
+    real_ancestor_location_inf
+  group: "real_ancestor_locations_inf"
+  threads: 8
+  resources:
+   runtime=15
+  run:
+    # tame numpy
+    import os
+    os.environ["OMP_NUM_THREADS"] = str(threads)
+    os.environ["GOTO_NUM_THREADS"] = str(threads)
+    os.environ["OPENBLAS_NUM_THREADS"] = str(threads)
+    os.environ["MKL_NUM_THREADS"] = str(threads)
+    os.environ["VECLIB_MAXIMUM_THREADS"] = str(threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(threads)
+    import numpy as np
+    import tskit
+    # function to get locations of ancestors from a tree at a given time
+    def true_locations(ts, tree, nodes, time):
+      locs = np.empty((len(nodes),2))
+      for i in tree.nodes():
+        if ts.node(i).time==time:
+          for leaf in tree.leaves(i):
+            if leaf in nodes:
+              locs[leaf] = ts.individual(ts.node(i).individual).location[:2]
+      return locs
+    # loop over trees and times
+    positions = np.loadtxt(input[0])[:100] #bps to get ancestors at (since the ancestor ts has different trees), first and last base pair of each sampled locus
+    ts = tskit.load(input[1]) #true tree sequence
+    all_locs = []
+    ix = 0
+    nodes = range(int(wildcards.k) * int(wildcards.G))[:10] #which samples to locate ancestors of
+    print('getting ancestor locations')
+    for i,tree in tqdm(enumerate(ts.trees()), total=ts.num_trees):
+      if tree.interval[1] > positions[ix][0]:
+        locss = [true_locations(ts,tree,nodes,0)] #start with sample locations
+        for time in retain_gens:
+          locs = true_locations(ts, tree, nodes, time)
+          locss.append(locs)
+        all_locs.append(locss)
+        ix += 1
+        if ix >= len(positions):
+          break #stop after last tree
+    # arrange: loci, samples, times
+    all_locs = np.array(all_locs).swapaxes(1,2)
+    np.save(output[0], all_locs)
+
+rule real_ancestor_locations_inf:
+  input:
+    expand(real_ancestor_location_inf,  L=Ls, RBP=RBPs, LAMBDA=LAMBDAs, K=Ks, W=Ws, SIGMAcomp=SIGMAcomps, SIGMAmate=SIGMAmates, SIGMAdisp=SIGMAdisps, selfing=selfings, MAXT=MAXTs, nrep=nreps, Ne=Nes, U=Us, d=ds, k=ks, G=Gs, numiter=numiters, threshold=thresholds, treeskip=treeskips, M=Ms, tCutoff=tCutoffs)
+
