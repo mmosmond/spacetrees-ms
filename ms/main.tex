@@ -63,7 +63,7 @@ An individual's set of genealogical ancestors expands rapidly geographically bac
 
 While spatial genealogies have proven incredibly useful for theoretical tools and intuition, with few exceptions they have not proven useful for inferences because we have not been able to construct these genealogies along recombining sequences. In non-recombining chromosomes (e.g., mtDNA and Y), constructed genealogies have successfully been used to understand patterns of dispersal and spatial spread \citep{avise2009phylogeography}. However, these spatial genealogy inferences are necessarily limited as a single genealogy holds only limited information about the history of populations in a recombining species \citep{barton1995genealogies}. Phylogenetic approaches to geography \citep[`phylogeography';][]{knowles2009statistical} have been more widely and successfully applied to pathogens to track the spatial spread of epidemics, such as SARS-Cov-2 \citep{martin2021insights}, but such approaches have yet to be applied to the thousands of genealogical trees that exist in sexual populations. 
 
-Here we capitalize on the recent ability to infer a sequence of genealogies, with branch lengths, across recombining genomes \citep{rasmussen2014genome,speidel2019method,wohns2021unified}. Equipped with this information, we develop a method that uses a sequence of trees to estimate dispersal rates and locate genetic ancestors in continuous, 2-dimensional space under the assumption of Brownian motion. Using thousands of approximately unlinked trees, we multiply likelihoods of the dispersal rate across trees to get a genome-wide estimate and use the sequence of trees to predict a cloud of ancestral locations as a way to visualize geographic ancestries. We first test our approach with simulations and then apply it to \textit{Arabidopsis thaliana}, a species with a wide geographic distribution and a complex history \citep{fulgione2018archaic}.
+Here we capitalize on the recent ability to infer a sequence of genealogies, with branch lengths, across recombining genomes \citep[][reviewed in \citet{wong2024general,lewanski2024era,nielsen2024inference}]{rasmussen2014genome,speidel2019method,wohns2021unified,schaefer2021ancestral,zhang2023biobank,gunnarsson2024scalable,deng2024robust}. Equipped with this information, we develop a method that uses a sequence of trees to estimate dispersal rates and locate genetic ancestors in continuous, 2-dimensional space under the assumption of Brownian motion. Using thousands of approximately unlinked trees, we multiply likelihoods of the dispersal rate across trees to get a genome-wide estimate and use the sequence of trees to predict a cloud of ancestral locations as a way to visualize geographic ancestries. We first test our approach with simulations and then apply it to \textit{Arabidopsis thaliana}, a species with a wide geographic distribution and a complex history \citep{fulgione2018archaic}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -83,379 +83,8 @@ We first give an overview of our approach, the major components of which are ill
 
 \begin{figure}[!htb]
 \begin{center}
-\begin{tikzpicture}[>=triangle 60, scale=0.75, every node/.style={scale=0.75}] %if figure too big, adjust both scales equally
-
-%%%%%%%%%%
-%tree sequence
-%%%%%%%%%%
-
-%%%%%%%%%%%%%%%
-%genome
-  \node[] (gleft) at (-8,-1) {...};
-  \node[] (gright) at (-2.75,-1) {...};
-  \draw[thick] (gleft) -- (gright);
-  \node[] (gleft) at (-2.5,-1) {};
-  \node[] (gright) at (2.5,-1) {};
-  \draw[thick] (gleft) -- (gright);
-  \node[] (gleft) at (2.75,-1) {...};
-  \node[] (gright) at (8,-1) {...};
-  \draw[thick] (gleft) -- (gright);
-  \coordinate (gleft) at (-8,-1);
-  \coordinate (gright) at (8,-1);
-  
-%%%%%%%%%%%%%%
-%focal tree
-  
-  %location on genome
-  \coordinate (tree) at (0,0);
-  \draw[line width=2mm, gray] (-0.1,-1) -- (0.1,-1) node[midway, below] (locus) {locus $i$};
-  
-  % sample nodes
-  \foreach \n in {1,...,5}{
-    \coordinate (n\n) at (\n - 3, 0); % define coordinate
-    \node[below = 0cm of n\n] {\n}; %node label
-  }
-  % ancestor node 1
-  \foreach \t in {0.5}{
-    \foreach \n in {4,5}{
-      \draw[ultra thick] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ultra thick] (n4 |- 0,\t) -- (n5 |- 0,\t) coordinate[midway] (n6);
-  }    
-  % ancestor node 2
-  \foreach \t in {1}{ %coalescent time
-    \foreach \n in {1,2}{ %nodes that coalesce
-      \draw[ultra thick] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ultra thick] (n1 |- 0,\t) -- (n2 |- 0,\t) coordinate[midway] (n7);
-  }
-  % ancestor node 3
-  \foreach \t in {1.5}{
-    \foreach \n in {3,6}{
-      \draw[ultra thick] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ultra thick] (n3 |- 0,\t) -- (n6 |- 0,\t) coordinate[midway] (n8);
-  }  
-  % ancestor node 4
-  \foreach \t in {3}{
-    \foreach \n in {7,8}{
-      \draw[ultra thick] (n\n) -- ( n\n |- 0,\t );
-    }
-  \draw[ultra thick] ( n7 |- 0,\t ) -- ( n8 |- 0,\t ) coordinate[midway] (n9);
-  }
-  % mrca stem
-  \draw[ultra thick] (n9) -- (n9 |- 0,3.25);      
- 
- %%%%%%%%%%%%%%
- %left tree
-  
-  %location on genome
-  \coordinate (tree) at (0,0);
-  \draw[line width=2mm, gray] (-5.6, -1) -- (-5.4, -1) node[midway, below] (llocus) {locus $i-1$};
-  
-  % sample nodes
-  \foreach \n in {1,...,5}{
-    \coordinate (n\n) at (-6.5 + \n - 2, 0); % define coordinate
-    \node[below = 0cm of n\n, gray] {\n}; %node label
-  }
-  % ancestor node 1
-  \foreach \t in {0.25}{
-    \foreach \n in {3,4}{
-      \draw[thick, gray] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ thick, gray] (n3 |- 0,\t) -- (n4 |- 0,\t) coordinate[midway] (n6);
-  }    
-  % ancestor node 2
-  \foreach \t in {0.5}{ %coalescent time
-    \foreach \n in {6,5}{ %nodes that coalesce
-      \draw[ thick, gray] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ thick, gray] (n6 |- 0,\t) -- (n5 |- 0,\t) coordinate[midway] (n7);
-  }
-  % ancestor node 3
-  \foreach \t in {1.75}{
-    \foreach \n in {2,7}{
-      \draw[ thick, gray] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ thick, gray] (n2 |- 0,\t) -- (n7 |- 0,\t) coordinate[midway] (n8);
-  }  
-  % ancestor node 4
-  \foreach \t in {2.75}{
-    \foreach \n in {1,8}{
-      \draw[ thick, gray] (n\n) -- ( n\n |- 0,\t );
-    }
-  \draw[thick, gray] ( n1 |- 0,\t ) -- ( n8 |- 0,\t ) coordinate[midway] (n9);
-  }
-  % mrca stem
-  \draw[thick, gray] (n9) -- (n9 |- 0,3); 
-  
-%%%%%%%%%%%%%%
- %right tree
-  
-  %location on genome
-  \coordinate (tree) at (0,0);
-  \draw[line width=2mm, gray] (5.15,-1) -- (5.35,-1) node[midway, below] (rlocus){locus $i+1$};
-%  
-  % sample nodes
-  \foreach \n in {1,...,5}{
-    \coordinate (n\n) at (5.5 + \n - 3, 0); % define coordinate
-    \node[below = 0cm of n\n, gray] {\n}; %node label
-  }
-  % ancestor node 1
-  \foreach \t in {0.75}{
-    \foreach \n in {1,2}{
-      \draw[ thick, gray] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ thick, gray] (n1 |- 0,\t) -- (n2 |- 0,\t) coordinate[midway] (n6);
-  }    
-  % ancestor node 2
-  \foreach \t in {1.25}{ %coalescent time
-    \foreach \n in {6,3}{ %nodes that coalesce
-      \draw[ thick, gray] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ thick, gray] (n6 |- 0,\t) -- (n3 |- 0,\t) coordinate[midway] (n7);
-  }
-  % ancestor node 3
-  \foreach \t in {2.25}{
-    \foreach \n in {7,4}{
-      \draw[ thick, gray] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ thick, gray] (n7 |- 0,\t) -- (n4 |- 0,\t) coordinate[midway] (n8);
-  }  
-  % ancestor node 4
-  \foreach \t in {3.25}{
-    \foreach \n in {8,5}{
-      \draw[ thick, gray] (n\n) -- ( n\n |- 0,\t );
-    }
-  \draw[thick, gray] ( n8 |- 0,\t ) -- ( n5 |- 0,\t ) coordinate[midway] (n9);
-  }
-  % mrca stem
-  \draw[thick, gray] (n9) -- (n9 |- 0,3.5); 
-  
-%%%%%%%%%%%%%%%%%
-%time cut off
-  \draw[thick, dashed] (-8,2) -- (8,2) node[right] {$T$};
-
-%%%%%%%%%%%%
-% down arrows
-\draw[->] (locus.south) -- ($(locus.south) + (0,-1)$) node[midway, right, yshift=0.1cm] {ignore deep past};
-\draw[->, gray] (llocus.south) -- ($(llocus.south) + (0,-1)$) node[below, yshift=-1cm] {...};
-\draw[->, gray] (rlocus.south) -- ($(rlocus.south) + (0,-1)$) node[below, yshift=-1cm] {...};
-
-%%%%%%%%%%%%%
-%subtrees
-%%%%%%%%%%%
-
-  % sample nodes
-  \foreach \n in {1,...,5}{
-    \coordinate (n\n) at (\n - 3, -4.5); % define coordinate
-    \node[below = 0cm of n\n] {\n}; %node label
-  }
-  % ancestor node 1
-  \foreach \t in {-4}{
-    \foreach \n in {4,5}{
-      \draw[ultra thick, red] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ultra thick, red] (n4 |- 0,\t) -- (n5 |- 0,\t) coordinate[midway] (n6);
-  }
-  % ancestor node 2
-  \foreach \t in {-3.5}{ %coalescent time
-%    \foreach \n in {1,2}{ %nodes that coalesce
-%      \draw[ultra thick] (n\n) -- (n\n |- 0,\t);
-%    }
-  \draw[ultra thick, blue] (n1) -- (n1 |- 0,\t)  node[midway, right] {$t_1$}; 
-  \draw[ultra thick, blue] (n2) -- (n2 |- 0,\t); 
-  \draw[ultra thick, blue] (n1 |- 0,\t) -- (n2 |- 0,\t) coordinate[midway] (n7);
-  }
-  % ancestor node 3
-  \foreach \t in {-3}{
-    \foreach \n in {3,6}{
-      \draw[ultra thick, red] (n\n) -- (n\n |- 0,\t) node[midway, right] {$t_\n$};
-    }
-  \draw[ultra thick, red] (n3 |- 0,\t) -- (n6 |- 0,\t) coordinate[midway] (n8);
-  }  
-  % blue mrca stem
-  \draw[ultra thick, blue] (n7) -- (n7 |- 0,-2.75); 
-  % red mrca stem
-  \draw[ultra thick, red] (n8) -- (n8 |- 0,-2.75); 
-  
-%  \node[gray] at (1,-6) {subtree $j$};  
-
-% down arrows
-\draw[->] ($(n3.south) + (0,-0.75)$) -- ($(n3.south) + (0,-1.75)$) node[midway, right, yshift=0.1cm] {extract shared times};
-\draw[->, gray] ($(n3.south) + (-5.5,-0.75)$) -- ($(n3.south) + (-5.5,-1.75)$) node[below, yshift=-1.25cm] {...};
-\draw[->, gray] ($(n3.south) + (5.25,-0.75)$) -- ($(n3.south) + (5.25,-1.75)$) node[below, yshift=-1.25cm] {...};
-
-%%%%%%%%%%%%
-%shared times
-%%%%%%%%%%%
-
-  \node[anchor = north] (matrix) at ($(n3.south) + (0,-2)$) {
-   $\begin{pmatrix} 
-        \color{blue}{t_1} & \color{blue}{0} & \color{black}{0} & \color{black}{0} & \color{black}{0} \\
-        \color{blue}{0} & \color{blue}{t_1} & \color{black}{0}& \color{black}{0} & \color{black}{0} \\
-        \color{black}{0} & \color{black}{0} & \color{red}{t_3} & \color{red}{0} & \color{red}{0} \\ 
-        \color{black}{0} & \color{black}{0} & \color{red}{0} & \color{red}{t_3} & \color{red}{t_6} \\ 
-        \color{black}{0} & \color{black}{0} & \color{red}{0} & \color{red}{t_6} & \color{red}{t_3} 
-  \end{pmatrix}$
-  };
-
-% down arrows
-\draw[decoration={brace,raise=5pt,amplitude=10pt,mirror},decorate] ($(matrix.south) + (gleft) + (0,1.25)$) -- ($(matrix.south) + (gright) + (0,1.25)$);
-\coordinate(A) at ($(matrix.south) + (0, -1.5)$);
-\draw[->] ($(matrix.south) + (0, -0.5)$) -- (A) node[midway, right, yshift=0.1cm] {estimate dispersal rate};
-
-%%%%%%%%%%%%%%
-%dispersal rate
-%%%%%%%%%%%%%%
-
-\node[anchor=north] at ($(matrix.south) + (gleft) + (0, -3.5)$) (locations) {
-  \begin{axis}[
-      title=sample locations,
-      title style={at={(axis description cs:0.5,0.95)}, gray},
-      cycle list name=black white,
-      height=5cm,
-      width=5cm,
-      xlabel=$x$,
-      ylabel=$y$,
-      samples=5,
-      domain=0:1,
-      ymin = 0,
-      ymax = 1,
-      ticks=none,
-      x label style={at={(axis description cs:0.5,0)}, anchor=north, color=gray},
-      y label style={at={(axis description cs:0,0.5)},rotate=-90,anchor=east, color=gray}
-  ]
-%  \addplot+[only marks]  {rand}; %plot some random locations
-    \addplot[only marks, mark=text, text mark = {1}, blue] table { 
-      0.4 0.9
-    };
-    \addplot[only marks, mark=text, text mark = {2}, blue] table { 
-      0.3 0.8
-    };
-    \addplot[only marks, mark=text, text mark = {3}, red] table { 
-      0.45 0.5
-    };
-    \addplot[only marks, mark=text, text mark = {4}, red] table { 
-      0.6 0.4
-    };    
-    \addplot[only marks, mark=text, text mark = {5}, red] table { 
-      0.5 0.2
-    };    
-  \end{axis}
-};
-
-\draw[->] ($(locations) + (4cm, 2.5cm)$) to [out=45, in=90] (A);
-
-\coordinate(A) at ($(matrix.south) + (0, -3)$);
-\draw[fill=lightgray!50!white, rotate around={30:(A)}] (A) ellipse (2cm and 1.25cm);
-  \node[] at (A) {
-  \footnotesize
-%   $\widehat{\mathbf{\Sigma}}$
-    $\begin{pmatrix} 
-      \sigma_x^2 & \rho\sigma_x\sigma_y \\
-      \rho\sigma_x\sigma_y & \sigma_y^2
-    \end{pmatrix}$
-  };
-
-% down arrows
-\coordinate(A) at (-2,-15);
-\draw[->] ($(A)+(1,1)$) to [out=270, in=90] node[midway, right, xshift=0.5cm] {locate genetic ancestors} (A) ;
-\draw[->] ($(locations) + (4cm, 0.5cm)$) to [out=315, in=90] (A);
-
-%%%%%%%%%%%%
-% locate ancestors
-%%%%%%%%%%%%%
-
-% red tree
-\begin{scope}[xshift = 6cm, yshift = -13cm]
-
-  % sample nodes
-  \foreach \n in {3,...,5}{
-    \coordinate (n\n) at (\n - 3, -4.5); % define coordinate
-    \node[below = 0cm of n\n] {\n}; %node label
-  }
-  % ancestor node 1
-  \foreach \t in {-4}{
-    \foreach \n in {4,5}{
-      \draw[ultra thick, red] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ultra thick, red] (n4 |- 0,\t) -- (n5 |- 0,\t) coordinate[midway] (n6);
-  }    
-  % ancestor node 3
-  \foreach \t in {-3}{
-    \foreach \n in {3,6}{
-      \draw[ultra thick, red] (n\n) -- (n\n |- 0,\t);
-    }
-  \draw[ultra thick, red] (n3 |- 0,\t) -- (n6 |- 0,\t) coordinate[midway] (n8);
-  }
-  % red mrca stem
-  \draw[ultra thick, red] (n8) -- (n8 |- 0,-2.75); 
-  % focal ancestor
-  \draw[ultra thick, red] (n6 |- 0,-3.7) -- (n6 |- 0,-3) node[midway, right, red] {$t_A$};  
-  \draw[fill=black] (n6 |- 0,-3.7) circle (0.15cm) node[right] {$A$};
-
-\end{scope}
-
-% shared times
-  \node[anchor = north] (matrix) at (3,-15.75) {
-   $\left(\begin{array}{>{\columncolor{red!20}}cccc}
-        \rowcolor{red!20}
-        \color{red}{t_A} & \color{red}{0} & \color{red}{t_A} & \color{red}{t_A} \\ 
-        \color{red}{0} & \color{red}{t_3} & \color{red}{0} & \color{red}{0} \\ 
-        \color{red}{t_A} & \color{red}{0} & \color{red}{t_3} & \color{red}{t_6} \\ 
-        \color{red}{t_A} & \color{red}{0} & \color{red}{t_6} & \color{red}{t_3} 
-  \end{array}\right)$
-  };
-
-% ancestor plot
-\node[anchor=east] at ($(matrix.west) + (-4.75, -1.75)$) (locations) {
-  \begin{axis}[
-      cycle list name=black white,
-      height=5cm,
-      width=5cm,
-      xlabel=$x$,
-      ylabel=$y$,
-      samples=5,
-      domain=0:1,
-      ymin = 0,
-      ymax = 1,
-      ticks=none,
-      x label style={at={(axis description cs:0.5,0)}, anchor=north, color=gray},
-      y label style={at={(axis description cs:0,0.5)},rotate=-90, anchor=east, color=gray}
-  ]
-%  \addplot+[only marks]  {rand}; %plot some random locations
-    \addplot[only marks, mark=text, text mark = {1}, blue] table { 
-      0.4 0.9
-    };
-    \addplot[only marks, mark=text, text mark = {2}, blue] table { 
-      0.3 0.8
-    };
-    \addplot[only marks, mark=text, text mark = {3}, red] table { 
-      0.45 0.5
-    };
-    \addplot[only marks, mark=text, text mark = {4}, red] table { 
-      0.6 0.4
-    };    
-    \addplot[only marks, mark=text, text mark = {5}, red] table { 
-      0.5 0.2
-    };    
-    \addplot[mark=text, text mark = {A}, black] table { 
-      0.525 0.375
-    };
-%    \addplot[domain=0:360,data cs=polar, samples=200, line width=0.7pt, red] (x,{1/(sqrt(1 - 2*cos(x)*cos(x)))});
-\addplot [domain=-pi:pi, samples=200, black, line width=0.7pt, rotate around={35:(axis cs:0.525,0.375)}] ({0.525 + sqrt(0.005)*sin(deg(x))}, {0.375 + sqrt(0.008)*cos(deg(x))});
-  \end{axis}
-};
-
-%arrows
-\draw[->] (3,-4) to [out=0, in=90, looseness=1] ($(matrix) + (4,2)$);
-\draw[->] ($(matrix.east) + (0.75,0)$) -- (matrix.east) node[midway, below, yshift=-1.25cm] {calculate shared times with ancestor};
-\draw[->] (matrix.west) -- ($(matrix.west) + (-1,0)$);
-
-\end{tikzpicture}
+\includegraphics[width=0.925\linewidth]{fig1.pdf}
 \end{center}
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \caption{
 (Continued on the following page.)
@@ -466,21 +95,21 @@ We first give an overview of our approach, the major components of which are ill
 \begin{figure}[!t]
 \contcaption{
 \textbf{Conceptual overview of the approach.}
-From a sequence of trees covering the full genome, we downsample to trees at approximately unlinked loci. To avoid the influence of strongly non-Brownian dynamics at deeper times (e.g., glacial refugia, boundaries), we ignore times deeper than $T$, which divides each tree into multiple subtrees (here, blue and red subtrees at locus $i$). From these subtrees we extract the shared times of each lineage with all others. In practice (but not shown here), we use multiple samples of the tree at a given locus, for importance sampling, and also extract the coalescence times for importance sample weights. Under Brownian motion, the shared times describe the covariance we expect to see in the locations of our samples, and so using the times and locations we can find the maximum likelihood dispersal rate (a 2x2 covariance matrix). While we can estimate a dispersal rate at each locus, a strength of our approach is that we combine information across many loci, by multiplying likelihoods, to estimate a single genome-wide dispersal rate. Finally, we locate a genetic ancestor at a particular locus (a point on a tree, here $A$) by first calculating the time this ancestor shares with each of the samples in its subtree, and then using the shared times and dispersal rate to calculate the probability distribution of the ancestor's location conditioned on the sample locations. In practice (but not shown here), we calculate the location of the ancestor of a given sample at a given time across many loci, combining information across loci into a distribution of genome-wide ancestry across space.
+From a sequence of trees covering the full genome, we downsample to trees at approximately unlinked loci. To avoid the influence of strongly non-Brownian dynamics at deeper times (e.g., glacial refugia, boundaries), we ignore times deeper than $T$, which divides each tree into multiple subtrees (here, blue and red subtrees at locus $i$). From these subtrees we extract the shared times of each pair of lineages back to the root. In practice (but not shown here), we use multiple samples of the tree at a given locus, for importance sampling, and also extract the coalescence times for importance sample weights. Under Brownian motion, the shared times describe the covariance we expect to see in the locations of our samples, and so using the times and locations we can find the maximum likelihood dispersal rate (a 2x2 covariance matrix). While we can estimate a dispersal rate at each locus, a strength of our approach is that we combine information across many loci, by multiplying likelihoods, to estimate a single genome-wide dispersal rate. Finally, we locate a genetic ancestor at a particular locus (a point on a tree, here $A$) by first calculating the time this ancestor shares with each of the samples in its subtree, and then using the shared times and dispersal rate to calculate the probability distribution of the ancestor's location conditioned on the sample locations. In practice (but not shown here), we calculate the location of the ancestor of a given sample at a given time across many loci, combining information across loci into a distribution of genome-wide ancestry across space.
 }% Continued caption
 \end{figure}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+ck t
 The rate of dispersal, which determines the average distance between parents and offspring, is a key parameter in ecology and evolution. To estimate this parameter we assume that in each generation the displacement of an offspring from its mother is normally distributed with a mean of 0 in each dimension and covariance matrix $\mathbf{\Sigma}$. In two dimensions the covariance matrix is determined by the standard deviations, $\sigma_{x}$ and $\sigma_{y}$, along the $x$ (longitudinal) and $y$ (latitudinal) axes, respectively, as well as the correlation, $\rho$, in displacements between these two axes. The average distance between a mother and its offspring is then $\sqrt{2/\pi} \sigma_i$ in each dimension.
 
-Given this model, the path of a lineage from its ancestral location to the present day location is described by a Brownian motion with rate $\mathbf{\Sigma}$. We therefore refer to $\mathbf{\Sigma}$ as the dispersal rate, which describes the rate of increase in the variance of a location along a single lineage. Lineages covary in their locations because of shared evolutionary histories -- lineages with a more recent common ancestor covary more. Given a tree at a locus we can calculate the covariance matrix of shared evolutionary times and compute the likelihood of the dispersal rate, $\mathbf{\Sigma}$, which is normally distributed given this covariance matrix. At each locus we can estimate the likelihood of the dispersal rate given the tree at that locus allowing us to multiply likelihoods across loci to derive a genome-wide likelihood, and thus a genome-wide maximum likelihood dispersal rate. While the genome-wide dispersal estimate is not biased by correlations between the trees, we simply use every $n^{\mathrm{th}}$ locus across the genome to reduce the redundancy of information we estimate dispersal from.
+Given this model, the path of a lineage from its ancestral location to the present day location is described by a Brownian motion with rate $\mathbf{\Sigma}$. We therefore refer to $\mathbf{\Sigma}$ as the dispersal rate, which describes the rate of increase in the variance of a location along a single lineage. Lineages covary in their locations because of shared evolutionary histories -- lineages with a more recent common ancestor covary more. Given a tree at a locus we can calculate the covariance matrix of shared evolutionary times (back to the root) and compute the likelihood of the dispersal rate, $\mathbf{\Sigma}$, which is normally distributed given this covariance matrix. At each locus we can estimate the likelihood of the dispersal rate given the tree at that locus allowing us to multiply likelihoods across loci to derive a genome-wide likelihood, and thus a genome-wide maximum likelihood dispersal rate. While the genome-wide dispersal estimate is not biased by correlations between the trees, we simply use every $n^{\mathrm{th}}$ locus across the genome to reduce the redundancy of information we estimate dispersal from.
 
 Under this same model we can also estimate the locations of genetic ancestors at a locus. Any point along a tree at any locus is a genetic ancestor of one or more current day samples. This ancestor's lineage has dispersed away from the location of the most recent common ancestor of the samples, and covaries with current day samples in their geographic location to the extent that it shares times in the tree with them. Under this model, the location of an ancestor is influenced by the locations of all samples in the same tree, including those that are not direct descendants \citep[cf.][]{wohns2021unified}. For example, in Figure \ref{fig:overview} the ancestor's location is not the midpoint of its two descendants (samples 4 and 5); the ancestor's location is also pulled towards sample 3 since the ancestor and sample 3 both arose from a common ancestor. Conditioning on the sample locations, and given the shared times and previously inferred dispersal rate, we can compute the probability the ancestor was at any location, which again is a normal distribution. In contrast to dispersal, for ancestral locations we do not want to multiply likelihoods across loci since the ancestors at distant loci are likely distinct. Instead we calculate the maximum likelihood location of the genetic ancestor at each sparsely-sampled locus to get a cloud of likely ancestral locations genome-wide, and use these clouds to visualize the spatial spread of genetic ancestry backwards through time.
 
 We estimate marginal trees along the genome using \texttt{Relate} \citep{speidel2019method}. While we could in principle estimate trees independently at regions across the genome, a benefit of \texttt{Relate} and similar methods is that they estimate each tree using information from nearby regions. \texttt{Relate} infers a sequence of tree topologies and associated branch lengths, and can return a set of posterior draws of the branch lengths on a given tree \citep[it was the only method that did so for a large number of samples when we began this work, but now see][]{wohns2021unified,deng2024robust}. This posterior distribution of branch lengths is useful to us as the shared times in the tree are key to the amount of time that individual lineages have had to disperse away from one another and we wish to include uncertainty in the times into our method. \texttt{Relate} gives us a posterior distribution of branch lengths that is estimated using a coalescent prior, which assumes a panmictic population of varying population size (the size changes are estimated as part of the method), where any two lineages are equally likely to coalesce. This panmictic prior results in a bias in the coalescent times under a spatial model, where geographically proximate samples are more likely to coalesce. To correct for this bias we make use of importance sampling to weight the samples of branch lengths at each locus. We then calculate the weighted average likelihood over our draws of our sample of trees at a locus (or loci), so that it is as if they were drawn from a prior of branching Brownian motion \citep{meligkotsidou2007postprocessing}. 
 
-In practice we concentrate on the recent past history of our sample. For our estimates of dispersal rates in particular we do not want to assume that our model of Gaussian dispersal (and branching Brownian motion) holds deep into the past history of the sample. This is because the long-term movement of lineages is constrained by geographic barriers (e.g., oceans) and larger scale population movements may erase geographic signals over deep time scales. On a theoretical level ignoring the deep past may also be justified because in a finite habitat the locations of coalescence events further back in time become independent of sampling locations as lineages have moved around sufficiently \citep{wilkins2002coalescent}. Thus we only use this geographic model to some time point in the past ($T$), and at each locus we use the covariance of shared branch lengths based on the set of subtrees formed by cutting off the full tree $T$ generations back. 
+In practice we concentrate on the recent past history of our sample. For our estimates of dispersal rates in particular we do not want to assume that our model of Gaussian dispersal (and branching Brownian motion) holds deep into the past history of the sample. This is because the long-term movement of lineages is constrained by geographic barriers (e.g., oceans) and larger scale population movements may erase geographic signals over deep time scales. On a theoretical level ignoring the deep past may also be justified because in a finite habitat the locations of coalescence events further back in time become independent of sampling locations as lineages have moved around sufficiently \citep{wilkins2002coalescent}. Thus we only use this geographic model to some time point in the past ($T$), and at each locus we use the covariance of shared branch lengths based on the set of subtrees formed by cutting off the full tree $T$ generations back. There are many ways one could choose the cutoff time, e.g., the time to cross the habitat, the time since glaciation, or the most recent time at which the average number of lineages remaining across trees is less than a threshold. Here we estimate dispersal across a range of $T$, which gives us a sense of how the effective dispersal rate changes over time. We then use the full trees ($T\rightarrow\infty$) to locate ancestors, so that we use all the relatedness information. However, in our empirical application we only locate ancestors back to a time $T$ we feel is reasonable (to the most recent glaciation) and use the dispersal estimate from that $T$.
 
 Branching Brownian motion, also known as the Brownian-Yule process, is a simple model of spatial genealogies in a continuous population \citep{malecot1948mathematics,wright1943isolation}. This simplicity comes at a cost: the lack of local density-dependence generates non-uniform population density \citep{felsenstein1975pain} and the assumption of unbounded space overestimates the distance between samples \citep{kalkauskas2021sampling}. More complex models, such as the spatial Lambda Fleming-Viot process \citep{barton2010new}, overcome these issues and more, but are computationally expensive for inference \citep{wirtz2023connections}. Branching Brownian motion remains an analytically tractable model and a reasonable approximation over short-time scales \citep{edwards1970estimation,rannala1996probability,meligkotsidou2007postprocessing,novembre2009likelihood}.
 
@@ -628,13 +257,13 @@ Figure \ref{fig:sims}B shows the 95\% confidence ellipses for the locations of t
 
 Figure \ref{fig:sims}C shows the resulting error in the MLE ancestor locations, using the true or inferred trees, and compares this to sensible straw-man estimates (the current location of each sample and the mean location across samples). While our method outperforms the straw-man estimates, the mean squared error in our inferred location of the ancestor at a locus grows relatively rapidly back in time, as expected under Brownian motion.
 
-Given the large uncertainty of an ancestor's location at any one locus, we combine information across loci and consider a cloud of MLE ancestor locations from loci across the genome for a particular sample at a particular time in the past (Figure \ref{fig:sims}D). The genome-wide mean of the MLE locations remains closer to the true mean location of genetic ancestors (Figure \ref{fig:sims}E) than at any one locus, even with the inferred trees, suggesting our method can successfully trace major trends in the geographic ancestry of a sample deeper into the past. The error in ancestral locations appears relatively robust to the number of trees sampled per locus (Figure \ref{fig:anc-locs-M}) and the number of samples (Figure \ref{fig:anc-locs-k}).
+Given the large uncertainty of an ancestor's location at any one locus, we combine information across loci and consider a cloud of MLE ancestor locations from loci across the genome for a particular sample at a particular time in the past (Figure \ref{fig:sims}D). The genome-wide mean of the MLE locations remains closer to the true mean location of genetic ancestors (Figure \ref{fig:sims}E) than at any one locus, even with the inferred trees, suggesting our method can successfully trace major trends in the geographic ancestry of a sample deeper into the past. In contrast to dispersal, the error in ancestral locations appears relatively robust to the number of trees sampled per locus (Figure \ref{fig:anc-locs-M}) and the number of samples (Figure \ref{fig:anc-locs-k}). Importance sampling is expected to have a smaller effect on locations than dispersal because the locations depend much less on branch lengths. As we increase the number of samples we increase the expected number of topological errors but we also sample more of an ancestor's descendants and their close relatives, and so perhaps these two effects roughly cancel out.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection*{Empirical application: \textit{Arabidopsis thaliana}}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-\textit{A. thaliana} has a complex, and not yet fully resolved, spatial history \citep{fulgione2018archaic,hsu2019postglacial}, including range expansions, admixture between multiple glacial refugia, and long-distance colonization. To further examine this history, we originally applied our method to 1135 \textit{Arabidopsis thaliana} accessions from a wide geographic range \citep{alonso2016}. Unfortunately, the dispersal rates we estimated from this data were unreasonably large, on the order of $10^4$ km$^2$/generation, even after removing pairs of near-identical samples and geographic outliers \citep[for more details see our preprint,][]{osmondcoop2021}. We next analyzed an even larger dataset of roughly 1500 individuals from a broader geographic extent \citep{durvasula2017african}, but estimated a similarly large dispersal rate (results not shown but full pipeline available at \url{https://github.com/mmosmond/spacetrees-ms}). The very high dispersal rate estimates from these datasets is an artefact of long runs of identity between pairs of geographic separated sequences \citep[see Figure S6 of][]{osmondcoop2021}. We believe that these stretches of identity result from the incorrect imputation of missing genotypes, a problem that could not be resolved through various data filters. Imputation is required to infer the genealogies as \texttt{Relate} does not allow sites with missing genotypes. However, imputation can obscure rare alleles, which artificially lowers the divergence between similar sequences. This lowers coalescence times and biases dispersal estimates upward. While it may be possible to improve imputation, we resolved this issue by analyzing a smaller dataset with 66 long-read genomes \citep{wlodzimierz2023cycles}, where we could avoid imputing and capture more genetic variation \citep{igolkina2024towards} and therefore be much more confident in the resulting genealogies. 
+\textit{A. thaliana} has a complex, and not yet fully resolved, spatial history \citep{fulgione2018archaic,hsu2019postglacial}, including range expansions, admixture between multiple glacial refugia, and long-distance colonization. To further examine this history, we originally applied our method to 1135 \textit{Arabidopsis thaliana} accessions from a wide geographic range \citep{alonso2016}. Unfortunately, the dispersal rates we estimated from this data were unreasonably large, on the order of $10^4$ km$^2$/generation, even after removing pairs of near-identical samples and geographic outliers \citep[for more details see our preprint,][]{osmondcoop2021}. We next analyzed an even larger dataset of roughly 1500 individuals from a broader geographic extent \citep{durvasula2017african}, but estimated a similarly large dispersal rate (results not shown but full pipeline available at \url{https://github.com/mmosmond/spacetrees-ms}). The very high dispersal rate estimates from these datasets is an artefact of long runs of identity between pairs of geographically-separated sequences \citep[see Figure S6 of][]{osmondcoop2021}. We believe that these stretches of identity result from the incorrect imputation of missing genotypes, a problem that could not be resolved through various data filters. Imputation is required to infer the genealogies as \texttt{Relate} does not allow sites with missing genotypes. However, imputation can obscure rare alleles, which artificially lowers the divergence between similar sequences. This lowers coalescence times and biases dispersal estimates upward. We resolved this issue by analyzing a smaller dataset with 66 long-read genomes \citep{wlodzimierz2023cycles}, where we could avoid imputing and capture more genetic variation \citep{igolkina2024towards} and therefore be much more confident in the resulting genealogies. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsubsection*{\textit{A.\ thaliana} genealogies}
@@ -650,9 +279,9 @@ In our analyses below, we use every 100th tree starting from the beginning of ea
 
 We first used the trees at all sampled loci to estimate dispersal rate (Figure \ref{fig:thal_sigma_displaced}, inset). Using the full trees, back to the most recent common ancestor of each, we estimate a dispersal rate of about $30$ km$^2$/generation. 
 
-To check that this dispersal estimate is well calibrated we can compare it to simpler estimates. To do this we first calculated twice the average pairwise coalescent time over all loci (using just 1 tree per locus) for each pair of samples, $t_{ij}$ (multiplying $t_{ij}$ by the mutation rate then gives the expected pairwise nucleotide diversity \citep{ralph2020efficiently}). A simple estimate of the dispersal rate is then the slope of the regression of the squared pairwise geographic distances, $d_{ij}^2$, on the average coalescent times, $t_{ij}$. This gives a dispersal estimate of roughly 10 km$^2$/generation, as does taking the average of $d_{ij}^2/t_{ij}$ over pairs \citep{ianni2023exploring}. Replacing the pairwise coalescent times, $t_{ij}$, with pairwise nucleotide diversity divided by the mutation rate ($\pi_{ij}/(7\times10^{-9})$) gives a near identical estimate that is independent of our inferred trees. Our tree sequence estimate is expected to be larger than these simpler estimates because taking the arithmetic mean coalesecnt times over trees will lessen the amplifying effect of those trees with shorter coalescent times. Using instead the harmonic mean pairwise coalescent time over trees, we estimate a dispersal rate of roughly 40 km$^2$/generation, similar to our estimate. 
+To check that this dispersal estimate is well calibrated we can compare it to simpler estimates. To do this we first calculated twice the average pairwise coalescent time over all loci (using just 1 tree per locus) for each pair of samples, $t_{ij}$ (multiplying $t_{ij}$ by the mutation rate then gives the expected pairwise nucleotide diversity \citep{ralph2020efficiently}). A simple estimate of the dispersal rate is then the slope of the regression of the squared pairwise geographic distances, $d_{ij}^2$, on the average coalescent times, $t_{ij}$. This gives a dispersal estimate of roughly 10 km$^2$/generation, as does taking the average of $d_{ij}^2/t_{ij}$ over pairs \citep{ianni2023exploring}. Replacing the pairwise coalescent times, $t_{ij}$, with pairwise nucleotide diversity divided by the mutation rate ($\pi_{ij}/(7\times10^{-9})$) gives a near identical estimate that is independent of our inferred trees. Our tree sequence estimate is expected to be larger than these simpler estimates because taking the arithmetic mean coalescent times over trees will lessen the amplifying effect of those trees with shorter coalescent times. Using instead the harmonic mean pairwise coalescent time over trees, we estimate a dispersal rate of roughly 40 km$^2$/generation, similar to our estimate. 
 
-We next examined the effect of cutting off our inference deeper in time (Figure \ref{fig:thal_sigma_displaced}, inset). Cutting the trees off $10^6$ generations ago has essentially no effect, as it removes few coalescent events. With cutoffs of $10^5$ and $10^4$, the estimated dispersal rate increases to about 35 and 60 km$^2$/generation, respectively, which we believe is because finite habitat boundaries lower the effective dispersal rate over longer timescales but also suggests faster rates of movement post-glaciation. More recent cutoffs leave very few coalescent events and hence little information. We cannot reliably apply the same cutoffs to the simpler pairwise dispersal estimates discussed above because there are few pairs of samples that have an average genetic distance below the cutoffs, highlighting the increased amount of information in our method.
+We next examined the effect of cutting off our inference deeper in time (Figure \ref{fig:thal_sigma_displaced}, inset). Cutting the trees off $10^6$ generations ago has essentially no effect, as it removes few coalescent events. With cutoffs of $10^5$ and $10^4$, the estimated dispersal rate increases to about 35 and 60 km$^2$/generation, respectively, which we believe is because finite habitat boundaries lower the effective dispersal rate over longer timescales but also suggests faster rates of lineage movement post-glaciation, e.g., due to a recent northward range expansion. More recent cutoffs leave very few coalescent events and hence little information. We cannot reliably apply the same cutoffs to the simpler pairwise dispersal estimates discussed above because there are few pairs of samples that have an average genetic distance below the cutoffs, highlighting the increased amount of information in our method.
 
 These dispersal estimates are considerably higher than a recent estimate, using machine learning directly on genotype data, that was on the order of 1 km$^2$/generation \citep{smith2023dispersal}. This previous study used a similar sample size but a much narrower geographic range of more closely-related individuals. It is therefore likely that this lower estimate more strongly reflects shorter-term local dispersal, while we are striking a balance between these slower recent movements and faster movements that have occasionally occurred in deeper time. To get a sense of how large a dispersal rate we should expect, `non-relict' lineages are proposed to have dispersed from the Black Sea to the Atlantic Ocean (about 2500 km) in the past $10^4$ generations \citep{lee2017post,hsu2019postglacial}. This suggests some lineages should have $d_i^2/t_i$ values of at least 300 km$^2$/generation. We therefore think our effective dispersal rate is a reasonable one given the Brownian motion model and hypothesized movements in \textit{A. thaliana}.
 
@@ -892,7 +521,7 @@ Let $\mathbf{L}$ be the $n\times d$ matrix of sample locations, with $n$ samples
 We first derive the probability distribution of $\mathbf{L}$ given a tree topology (a directed graph with $n-1$ nodes and $2n-2$ edges), $\mathcal{G}$, and associated branch lengths (a vector of $2n-2$ times), $\mathcal{T}$, which together describe the coalescent history of the sample, and the dispersal rate ($d\times d$ covariance matrix), $\mathbf{\Sigma}$. 
 We derive this probability distribution, $\mathbb{P}(\mathbf{L} | \mathcal{G},\mathcal{T},\mathbf{\Sigma})$, by compounding the normally-distributed dispersal events each generation to give Brownian motion down the tree in a similar manner to phylogenetic least squares regression \citep{grafen1989phylogenetic,harmon2019phylogenetic}.
 
-Let $\mathbf{S}_{\mathcal{G},\mathcal{T}}$ be the $n\times n$ matrix of shared  times (in generations) between each pair of sample lineages in the tree defined by $\mathcal{G}$ and $\mathcal{T}$. Then, assuming per generation dispersal is multivariate normal with mean displacement $\mathbf{0}$ and covariance matrix $\mathbf{\Sigma}$, the probability distribution of the locations depends only on the shared times in the tree, $\mathbb{P}(\mathbf{L} | \mathcal{G},\mathcal{T}, \mathbf{\Sigma}) = \mathbb{P}(\mathbf{L} | \mathbf{S}_{\mathcal{G},\mathcal{T}}, \mathbf{\Sigma})$.
+Let $\mathbf{S}_{\mathcal{G},\mathcal{T}}$ be the $n\times n$ matrix of shared  times (in generations) between each pair of sample lineages back to the root in the tree defined by $\mathcal{G}$ and $\mathcal{T}$. Then, assuming per generation dispersal is multivariate normal with mean displacement $\mathbf{0}$ and covariance matrix $\mathbf{\Sigma}$, the probability distribution of the locations depends only on the shared times in the tree, $\mathbb{P}(\mathbf{L} | \mathcal{G},\mathcal{T}, \mathbf{\Sigma}) = \mathbb{P}(\mathbf{L} | \mathbf{S}_{\mathcal{G},\mathcal{T}}, \mathbf{\Sigma})$.
 %
 % To write this as a probability distribution, let $\bm{\ell}_i = [\ell_{i,1} \; \ell_{i,2} \; ... \;\ell_{i,d}]^\intercal$ be the $d$-dimensional location of sample $i$, so that $\mathbf{L} = [\bm{\ell}_1\; \bm{\ell}_2\; \dots \; \bm{\ell}_n]^\intercal$, and let $\bm{\ell} = [\ell_{1,1} \; \ell_{2,1} \; ... \; \ell_{n,1} \; \ell_{1,2} \; \ell_{2,2} \; ... \; \ell_{n,2} \; ... \; \ell_{1,d} \; \ell_{2,d} \; ... \; \ell_{n,d}]^\intercal$ be the matrix of locations represented as a vector of length $nd$.
 % Further, the locations conditioned on the shared times and dispersal rate, $\mathbb{P}(\mathbf{L} | \mathbf{S}_{\mathcal{G},\mathcal{T}}, \mathbf{\Sigma})$, are normally distributed
@@ -1193,17 +822,20 @@ Similarly, when we then also multiply (mean-centered) likelihoods across loci th
 where $\widehat{\mathbf{\Sigma}}^*_{ij}$ is the restricted maximum likelihood dispersal rate from subtree $j$ at locus $i$ and $n_{ij}$ is the number of samples in subtree $j$ at locus $i$.
 
 Unfortunately there is no analytical expression for the maximum likelihood dispersal rate with importance sampling, and so we instead numerically search for the dispersal rate (and branching rate, $\lambda$) which minimizes the negative log composite likelihood ratio (the negative log of the product of Equation \eqref{eq:LRmontecarlo} over loci).
-We initialize the search with the maximum likelihood dispersal rate using just the first tree at each locus (Equation \ref{eq:RMLEsigma_subtrees_loci}).
+We perform this search in \texttt{Python} with \texttt{scipy}'s \texttt{optimize.minimize} function \citep{2020SciPy-NMeth} using the L-BFGS-B method, which allows us to implement bounds (the standard deviations must be non-negative and the correlation must be between -1 and 1). 
+We initialize the search with the best linear unbiased predictor of the dispersal rate (below).
+To initialize the branching rate we first solve $n(t)=n(0)\exp(\lambda_0 t)$ for $\lambda_0$, giving $\lambda_0 = \ln(n(t)/n(0))/t$, where $n(t)$ is the number of samples, $n(0)$ is the initial number of lineages in a tree, and $t$ is the length of the tree.   
+We then average $\lambda_0$ over all trees and loci.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsubsection*{Best linear unbiased predictor}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-There is an analytical approximation to the maximum likelihood dispersal rate when we sample multiple trees per locus but ignore the importance weights (since we do not know the branching rate, $\lambda$).
+There is an analytical approximation to the maximum likelihood dispersal rate when we sample multiple trees per locus but ignore the importance weights (we need to ignore the importance weights because we do not know the branching rate, $\lambda$, without doing a numerical search).
 Let $\widehat{\mathbf{\Sigma}}^*_{ij}$ be the (restricted) maximum likelihood dispersal rate from tree $j$ at locus $i$ (as calculated from Equation \ref{eq:RMLEsigma_subtrees}).
 Averaging this over all trees and loci then gives a best linear unbiased predictor (BLUP) of the (restricted) maximum likelihood dispersal rate.
 In the main text we numerically search for the (restricted) maximum likelihood dispersal rate, which allows us to include importance weights and more accurately infers simulated dispersal rates, but we implement the BLUP method in our software as it can be a useful way to quickly get a rough estimate of dispersal while still accounting for tree uncertainty.
-% roughly twice the mle dispersal rate (sd) for thaliana with 1e4 cutoff
+For both simulations and \textit{Arabidopsis}, the BLUP dispersal rate tended to be roughly twice that of the MLE dispersal rate. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection*{Ancestor locations}
@@ -1313,6 +945,7 @@ We can calculate this directly and it is therefore, in principle, faster to comp
 It is also independent of the dispersal rate since $\mathbb{P}(\mathcal{T}_m | \mathcal{G}, \mathbf{\Sigma})=\mathbb{P}(\mathcal{T}_m | \mathcal{G})$ under our spatial model.
 In practice we find that the two estimators are very correlated, and the more correct numerical search over Equation \eqref{eq:LRmontecarloAncestors} is reasonably quick. 
 Throughout the paper we use the numerical search over Equation \eqref{eq:LRmontecarloAncestors} but the BLUP method is also implemented in our software.
+Our software also allows one to importance sample over ancestor location uncertainty, replacing $\widehat{\bm{\ell}_a}(\mathcal{T}_m, \mathcal{G})$ with the variance in $\bm{\ell}_a(\mathcal{T}_m, \mathcal{G})$ in Equation \eqref{eq:LRmontecarloAncestorsBLUP}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection*{Simulations}
@@ -2097,8 +1730,8 @@ To speed up calculations, here we use $M=100$ importance samples at each locus.
 
 \caption{
 \textbf{\texttt{Relate}-inferred demography of \textit{Arabidopsis thaliana}.}
+Effective population sizes for each chromosome (top) and cross-coalescence rates for each pair of PCA groups (bottom) inferred with \texttt{Relate}. Compare with figure 4a in \cite{alonso2016} and figures 5 and 6 in \cite{durvasula2017african}.
 }
-
 \refstepcounter{SIfig}\label{fig:nes}
 \end{figure}
 
