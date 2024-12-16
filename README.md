@@ -1,5 +1,5 @@
 # spacetrees-ms
-Code to create our spacetrees paper, "Estimating dispersal rates and locating genetic ancestors with genome-wide genealogies", Osmond & Coop 2024.
+Code to create our spacetrees paper, "Estimating dispersal rates and locating genetic ancestors with genome-wide genealogies", Osmond & Coop 2024. https://elifesciences.org/articles/72177
 
 For the latest software, see https://github.com/osmond-lab/spacetrees
 
